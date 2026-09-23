@@ -86,6 +86,16 @@ jobs:
           fi
           echo "icon present"
 
+      # The README shows the screenshot from GitHub on every store page, so a release without it
+      # would ship a broken image.
+      - name: Check the screenshot is there
+        run: |
+          if [ ! -f docs/images/screenshot.webp ]; then
+            echo "::error::docs/images/screenshot.webp is missing. Add the screenshot the README shows and commit it."
+            exit 1
+          fi
+          echo "screenshot present"
+
       # Publishing is part of releasing here, so a missing token is a failure now rather than
       # after the GitHub release already exists.
       - name: Check the Hexium token is set

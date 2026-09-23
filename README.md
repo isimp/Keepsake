@@ -8,6 +8,8 @@ Settings a server hands out while you are connected to it still follow the serve
 
 Your kept values are stored in BepInEx/keepsake.pins, a file profile syncs leave alone. They are also written into each mod's own config file, so if you are the one sharing a profile, whatever you keep goes out to everyone who follows it.
 
+![The Keepsake panel](https://raw.githubusercontent.com/isimp/Keepsake/main/docs/images/screenshot.webp)
+
 ## AI notice
 
 Most of Keepsake was written by Claude Code (Anthropic), which did the heavy lifting on implementation and design. Heads-up so you can judge for yourself.

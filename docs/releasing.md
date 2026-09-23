@@ -6,6 +6,8 @@ Pushing builds the mod. Releasing is a manual workflow that creates a GitHub rel
 
 The icon lives at `packaging/icon.png`: a 256x256 PNG, committed to the repository. The release workflow stops if it is missing or the wrong size.
 
+The README shows `docs/images/screenshot.webp` through its raw GitHub URL, since relative links do not work on the store pages. The release workflow stops if the file is missing.
+
 Each store needs a token stored as a repository secret. The workflow checks for the tokens of the selected stores before building.
 
 | Secret | Where to create it |
@@ -26,6 +28,7 @@ The workflow then runs these steps in order:
 |---|---|
 | Version check | All three version sources match the input. |
 | Icon check | `packaging/icon.png` exists. |
+| Screenshot check | `docs/images/screenshot.webp` exists. |
 | Token checks | The token of each selected store is set. |
 | Build | Both assemblies against `lib/`, so no game install is needed. |
 | Package | One zip per store with the manifest, icon, README, CHANGELOG and LICENSE at the root, `Keepsake.dll` in `plugins/` and `Keepsake.Preloader.dll` in `patchers/`. Mod managers install those two folders into `BepInEx/plugins` and `BepInEx/patchers`. The Thunderstore zip's manifest also lists `denikson-BepInExPack_Valheim-5.4.2350`. |
