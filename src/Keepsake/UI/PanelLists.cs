@@ -330,6 +330,15 @@ namespace Keepsake.UI
             {
                 var item = view.Item;
                 if (item == null || item.Heading != null) return;
+
+                // A setting from the place being left would stay open on the right beside a list
+                // it is not in, so moving somewhere else starts with nothing selected.
+                if (item.Source != _source || item.Mod != _mod)
+                {
+                    _selectedId = null;
+                    _note = null;
+                }
+
                 _source = item.Source;
                 _mod = item.Mod;
                 Populate(keepScroll: false);
