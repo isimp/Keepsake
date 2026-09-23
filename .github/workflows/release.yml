@@ -29,7 +29,7 @@ on:
       hexium_categories:
         description: "Hexium categories, comma separated"
         required: false
-        default: "Quality of Life,Config,Open Source,Valheim 1.0"
+        default: "Quality of Life,Config,User Interface,Tools,Open Source,Valheim 1.0"
       thunderstore_categories:
         description: "Thunderstore category slugs, comma separated (keep ai-generated)"
         required: false

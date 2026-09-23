@@ -61,7 +61,7 @@ For authorization the script tries `Bearer` first and falls back to `Token`, pri
 It can also be run by hand:
 
 ```bash
-HEXIUM_TOKEN=... python3 tools/publish.py dist/hexium/Keepsake-0.1.0.zip --store hexium --team isimp --categories "Quality of Life,Config,Open Source,Valheim 1.0"
+HEXIUM_TOKEN=... python3 tools/publish.py dist/hexium/Keepsake-0.1.0.zip --store hexium --team isimp --categories "Quality of Life,Config,User Interface,Tools,Open Source,Valheim 1.0"
 THUNDERSTORE_TOKEN=... python3 tools/publish.py dist/thunderstore/Keepsake-0.1.0.zip --store thunderstore --team isimp --categories "ai-generated,mods,tools,utility,client-side,deep-north-update"
 python3 tools/publish.py dist/hexium/Keepsake-0.1.0.zip --check-only   # validate only
 ```
