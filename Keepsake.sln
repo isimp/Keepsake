@@ -1,0 +1,34 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{F485473B-42BA-4B0F-BE65-9766D4E027F7}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Keepsake", "src\Keepsake\Keepsake.csproj", "{F5DCAE12-D6FF-4F3E-8F49-1D18D0957489}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Keepsake.Preloader", "src\Keepsake.Preloader\Keepsake.Preloader.csproj", "{B593EF52-EEB3-4E7A-AB30-1D1A178F686E}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{F5DCAE12-D6FF-4F3E-8F49-1D18D0957489}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{F5DCAE12-D6FF-4F3E-8F49-1D18D0957489}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{F5DCAE12-D6FF-4F3E-8F49-1D18D0957489}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{F5DCAE12-D6FF-4F3E-8F49-1D18D0957489}.Release|Any CPU.Build.0 = Release|Any CPU
+		{B593EF52-EEB3-4E7A-AB30-1D1A178F686E}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{B593EF52-EEB3-4E7A-AB30-1D1A178F686E}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{B593EF52-EEB3-4E7A-AB30-1D1A178F686E}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{B593EF52-EEB3-4E7A-AB30-1D1A178F686E}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{F5DCAE12-D6FF-4F3E-8F49-1D18D0957489} = {F485473B-42BA-4B0F-BE65-9766D4E027F7}
+		{B593EF52-EEB3-4E7A-AB30-1D1A178F686E} = {F485473B-42BA-4B0F-BE65-9766D4E027F7}
+	EndGlobalSection
+EndGlobal

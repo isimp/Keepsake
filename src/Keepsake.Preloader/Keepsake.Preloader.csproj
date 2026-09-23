@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <AssemblyName>Keepsake.Preloader</AssemblyName>
+    <RootNamespace>Keepsake</RootNamespace>
+    <Description>Puts your kept config values back before any mod reads them.</Description>
+    <DeployDir>$(BepInExDir)\patchers\Keepsake</DeployDir>
+  </PropertyGroup>
+
+  <!-- Forward slashes on purpose: Windows accepts them, and CI builds this on Linux. -->
+  <ItemGroup>
+    <Reference Include="BepInEx"><HintPath>$(CoreDir)/BepInEx.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="Mono.Cecil"><HintPath>$(CoreDir)/Mono.Cecil.dll</HintPath><Private>false</Private></Reference>
+  </ItemGroup>
+
+  <Target Name="DeployToProfile" AfterTargets="Build"
+          Condition="'$(LibsDir)' == '' And Exists('$(BepInExDir)\patchers')">
+    <MakeDir Directories="$(DeployDir)" />
+    <Copy SourceFiles="$(TargetPath)" DestinationFolder="$(DeployDir)" ContinueOnError="true" />
+    <Message Importance="high" Text="Keepsake.Preloader -> $(DeployDir)" />
+  </Target>
+
+</Project>
