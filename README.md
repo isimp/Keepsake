@@ -6,7 +6,7 @@ Press Home to open the panel. Pick a mod on the left or search by mod, setting o
 
 Settings a server hands out while you are connected to it still follow the server, and your value is back when you leave. Keepsake runs on your own machine only, and servers do not need it. It needs Jotunn.
 
-With Bindrune installed, keybinds are left to Bindrune, which takes over any keybind Keepsake kept before. Without it, Keepsake keeps keybinds like any other setting and offers to take over the keys Bindrune kept for you.
+Bindrune does the same for keybinds, and shows every keybind of the game and your mods in one panel, with the clashes between them. With Bindrune installed, Keepsake leaves keybinds to it, and Bindrune takes over any keybind you kept here before. Without it, Keepsake keeps keybinds like any other setting and offers to take over the keys Bindrune kept for you. Bindrune is on Thunderstore at https://thunderstore.io/c/valheim/p/isimp/Bindrune/ and on Hexium at https://valheim.hexium.gg/mods/isimp/Bindrune
 
 Your kept values are stored in BepInEx/keepsake.pins, a file profile syncs leave alone. They are also written into each mod's own config file, so if you are the one sharing a profile, whatever you keep goes out to everyone who follows it.
 
