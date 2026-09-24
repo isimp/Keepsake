@@ -1,6 +1,6 @@
 {
   "name": "Keepsake",
-  "version_number": "0.2.0",
+  "version_number": "0.3.0",
   "website_url": "https://github.com/isimp/Keepsake",
   "description": "Keep your own value for any mod setting on a shared profile. Kept settings survive profile syncs and are back in place before mods load. Browse and search every mod's settings in one panel, with descriptions, defaults and what changed this session.",
   "dependencies": [
