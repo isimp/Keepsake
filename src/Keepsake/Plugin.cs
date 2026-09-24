@@ -125,8 +125,8 @@ namespace Keepsake
             var selected = EventSystem.current != null ? EventSystem.current.currentSelectedGameObject : null;
             if (selected == null) return false;
 
-            var field = selected.GetComponent<InputField>();
-            if (field != null && field.isFocused) return true;
+            var input = selected.GetComponent<InputField>();
+            if (input != null && input.isFocused) return true;
 
             var tmp = selected.GetComponent<TMP_InputField>();
             return tmp != null && tmp.isFocused;

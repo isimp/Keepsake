@@ -82,8 +82,8 @@ namespace Keepsake.UI
             {
                 if (_root == null) return false;
                 var selected = EventSystem.current != null ? EventSystem.current.currentSelectedGameObject : null;
-                var field = selected != null ? selected.GetComponent<InputField>() : null;
-                return field != null && field.isFocused;
+                var input = selected != null ? selected.GetComponent<InputField>() : null;
+                return input != null && input.isFocused;
             }
         }
 
