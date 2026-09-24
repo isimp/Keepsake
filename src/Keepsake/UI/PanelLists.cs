@@ -460,7 +460,9 @@ namespace Keepsake.UI
             view.Value.text = current ?? "";
             view.Value.color = differs || kept ? Color.white : Dim;
 
-            view.Tag.text = row.Setting == null ? "not loaded" : kept ? "kept" : Session.IsChanged(row.Setting) ? "changed" : "";
+            view.Tag.text = row.Setting == null ? "not loaded"
+                : kept ? (row.Setting.LeftToBindrune ? "waiting" : "kept")
+                : Session.IsChanged(row.Setting) ? "changed" : "";
             view.Tag.color = kept ? Kept : Dim;
         }
 

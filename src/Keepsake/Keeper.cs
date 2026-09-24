@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using BepInEx.Configuration;
+using UnityEngine;
 
 namespace Keepsake
 {
@@ -74,6 +75,7 @@ namespace Keepsake
         {
             Sync();
             if (Find(setting.Id) != null) return null;
+            if (setting.LeftToBindrune) return BindruneKeepsKeys;
 
             var value = setting.Current;
             if (value == null) return "this setting's value could not be read";
@@ -126,10 +128,13 @@ namespace Keepsake
             Save();
             if (pin.Profile != null) Released[id] = pin.Profile;
 
+            // A keybind Bindrune looks after is its to set, so releasing one only lets go of it.
             var setting = SettingIndex.Find(id);
-            if (setting != null && pin.Profile != null && setting.Current != pin.Profile)
+            if (setting != null && !setting.LeftToBindrune && pin.Profile != null && setting.Current != pin.Profile)
                 Write(setting, pin.Profile);
         }
+
+        public const string BindruneKeepsKeys = "Bindrune keeps your keybinds. Set this key as yours in Bindrune to keep it.";
 
         /// <summary>Sets your value for a kept setting. Returns why not, or null.</summary>
         public static string SetValue(Setting setting, string text)
@@ -137,6 +142,7 @@ namespace Keepsake
             Sync();
             var pin = Find(setting.Id);
             if (pin == null) return "keep this setting first";
+            if (setting.LeftToBindrune) return BindruneKeepsKeys;
 
             text = (text ?? "").Trim();
             try
@@ -182,6 +188,8 @@ namespace Keepsake
                     continue;
                 }
 
+                if (setting.LeftToBindrune) continue;
+
                 var current = setting.Current;
                 if (current == null || current == pin.Value) continue;
 
@@ -206,6 +214,102 @@ namespace Keepsake
             return missing;
         }
 
+        /// <summary>A key Bindrune holds as yours, matched to the setting it belongs to.</summary>
+        public sealed class BindruneKeep
+        {
+            public Setting Setting;
+            public string Yours;
+            public string Profile;
+        }
+
+        /// <summary>
+        /// The keys Bindrune holds as yours that nothing applies while it is not loaded: those in
+        /// use, for keybind settings that are loaded and not kept here already. Empty while
+        /// Bindrune is loaded, since it looks after them itself then. Bindrune names a setting by
+        /// its mod's GUID, section and key, so each loaded keybind is named the same way and
+        /// matched whole rather than taking Bindrune's names apart.
+        /// </summary>
+        public static List<BindruneKeep> BindruneKeys()
+        {
+            var found = new List<BindruneKeep>();
+            if (SettingIndex.BindruneLoaded) return found;
+
+            var keys = BindruneLink.ReadKeys().Where(k => k.Active).ToList();
+            if (keys.Count == 0) return found;
+
+            var byBindruneId = new Dictionary<string, Setting>();
+            foreach (var setting in SettingIndex.All.Where(s => s.IsKeybind))
+                byBindruneId[$"cfg:{setting.ModGuid}:{setting.Section}:{setting.Key}"] = setting;
+
+            foreach (var key in keys)
+            {
+                if (!byBindruneId.TryGetValue(key.Id, out var setting) || Find(setting.Id) != null) continue;
+
+                var yours = AsSetting(key.Yours, setting);
+                if (yours == null || !PinFile.Storable(yours)) continue;
+
+                found.Add(new BindruneKeep { Setting = setting, Yours = yours, Profile = AsSetting(key.Profile, setting) });
+            }
+
+            return found;
+        }
+
+        /// <summary>
+        /// Keeps every key BindruneKeys finds, at the key Bindrune held, with the key it recorded as
+        /// the profile's. Bindrune's own file is left as it is. Returns how many were taken over.
+        /// </summary>
+        public static int TakeOverFromBindrune()
+        {
+            Sync();
+
+            var taken = 0;
+            foreach (var keep in BindruneKeys())
+            {
+                Write(keep.Setting, keep.Yours);
+
+                var value = keep.Setting.Current;
+                if (value == null || !PinFile.Storable(value)) continue;
+
+                _pins.Add(new Pin
+                {
+                    File = keep.Setting.File,
+                    Section = keep.Setting.Section,
+                    Key = keep.Setting.Key,
+                    Value = value,
+                    Profile = keep.Profile != null && PinFile.Storable(keep.Profile) ? keep.Profile : value,
+                });
+                taken++;
+
+                Plugin.Log.LogInfo($"Keepsake: took over {value} for {keep.Setting.ModName} [{keep.Setting.Section}] {keep.Setting.Key} from Bindrune.");
+            }
+
+            if (taken > 0) Save();
+            return taken;
+        }
+
+        /// <summary>
+        /// A key in the form Bindrune stores it, which is how BepInEx writes a KeyboardShortcut,
+        /// in the form the setting stores it. A setting of a single KeyCode takes the main key.
+        /// Null when it cannot be read.
+        /// </summary>
+        private static string AsSetting(string stored, Setting setting)
+        {
+            try
+            {
+                var shortcut = string.IsNullOrEmpty(stored) || stored == "none"
+                    ? KeyboardShortcut.Empty
+                    : KeyboardShortcut.Deserialize(stored);
+
+                return setting.Entry.SettingType == typeof(KeyCode)
+                    ? TomlTypeConverter.ConvertToString(shortcut.MainKey, typeof(KeyCode))
+                    : TomlTypeConverter.ConvertToString(shortcut, typeof(KeyboardShortcut));
+            }
+            catch (Exception)
+            {
+                return null;
+            }
+        }
+
         /// <summary>Starts following changes to a cfg file's settings. Handed to SettingIndex.FileFound.</summary>
         public static void Follow(ConfigFile config)
         {
@@ -228,6 +332,9 @@ namespace Keepsake
                 Changed?.Invoke();
 
                 if (Find(id) == null) return;
+
+                // What Bindrune writes to a keybind is its own choice, not one to keep here.
+                if (SettingIndex.Find(entry)?.LeftToBindrune == true) return;
 
                 var now = entry.GetSerializedValue();
                 if (!PinFile.Storable(now)) return;

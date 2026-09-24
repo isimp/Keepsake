@@ -34,6 +34,25 @@ namespace Keepsake
             return index >= 0;
         }
 
+        /// <summary>
+        /// The type of a setting as BepInEx notes it in the comments above the line, such as
+        /// "KeyCode", or null when the file has no such line or no such note.
+        /// </summary>
+        public string TypeOf(string section, string key)
+        {
+            const string note = "# Setting type:";
+
+            var index = Find(section, key, out _);
+            for (var i = index - 1; i >= 0; i--)
+            {
+                var text = _lines[i].Trim();
+                if (!text.StartsWith("#")) break;
+                if (text.StartsWith(note)) return text.Substring(note.Length).Trim();
+            }
+
+            return null;
+        }
+
         /// <summary>Sets a setting's value. False when the file has no line for it.</summary>
         public bool Set(string section, string key, string value)
         {

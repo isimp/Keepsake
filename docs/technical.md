@@ -20,6 +20,14 @@ When a kept setting changes while the game runs, through a config manager or the
 
 ServerSync and Jotunn both hand a server's value to a setting while you are connected to a server that runs the mod, and both patch `ConfigEntryBase.GetSerializedValue` and `SetSerializedValue` so the cfg file keeps your local value during that time. Keepsake reads and writes through those same methods, so it only ever sees and keeps your local value, and a server handing its value over is never taken for a change of yours. Such settings can be kept like any other. They are recognised by the libraries' own switches: ServerSync's `SynchronizedConfig` on the entry it adds to the setting's description tags, and Jotunn's `IsAdminOnly` on a `ConfigurationManagerAttributes` tag.
 
+## Keybinds and Bindrune
+
+Bindrune keeps keybinds of its own through profile syncs, so where both are installed they would otherwise keep the same setting twice, and what it ends up as would depend on which wrote last. Instead a keybind, meaning a setting of type `KeyCode` or `KeyboardShortcut`, has one keeper:
+
+While Bindrune is installed, keybinds are Bindrune's. Keepsake shows them but does not keep, write or follow them: the preloader skips them, telling a keybind by the `# Setting type:` note BepInEx writes above each setting and Bindrune by `Bindrune.dll` under `BepInEx/plugins` (a mod manager disables a mod by renaming its files, so a disabled Bindrune does not count). A keybind kept here before Bindrune was installed waits in the Kept list until Bindrune takes it over: Bindrune makes it your own key there, with the key recorded here as the profile's, and removes its line from `keepsake.pins`.
+
+While Bindrune is not installed, keybinds are kept here like any other setting. The keys Bindrune holds as yours are then applied by nothing, so the panel offers to take them over. That only happens when asked: Keepsake reads `BepInEx/bindrune.keys` and keeps each key that is in use there, for settings that are loaded and not kept here already, and leaves Bindrune's file as it is. If Bindrune comes back, it takes those keys over again.
+
 ## The panel
 
 The left column lists your kept settings, the settings changed since the game started, and every mod. The middle column lists the chosen place's settings under their sections, with a bar on values that differ from the mod's default, and the right column shows the selected setting's description, default, allowed values and, once kept, its editor. The search runs over mod names, file names, sections, setting names and descriptions.

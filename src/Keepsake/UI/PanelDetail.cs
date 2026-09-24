@@ -29,6 +29,7 @@ namespace Keepsake.UI
             if (setting == null && pin == null)
             {
                 Wrapped("Select a setting to see what it does and to keep it.", _detail, DetailInner, 15, Dim);
+                BindruneOffer();
                 return;
             }
 
@@ -82,6 +83,13 @@ namespace Keepsake.UI
             Wrapped(setting.Current ?? "", _detail, DetailInner, 19, Color.white, true);
             Spacer(6f);
 
+            if (setting.LeftToBindrune)
+            {
+                Wrapped("Bindrune keeps your keybinds. To keep this key through profile syncs, set it as " +
+                        "yours in Bindrune.", _detail, DetailInner, 15, Color.white);
+                return;
+            }
+
             var row = ButtonRow();
             FixedButton("Keep", row, 150f, 34f, () => Act(() => Keeper.Pin(setting), Sfx.Kept,
                 () => $"{setting.Key} is kept at {setting.Current}. A profile sync leaves it alone now."));
@@ -92,6 +100,12 @@ namespace Keepsake.UI
 
         private static void KeptControls(Setting setting, Pin pin)
         {
+            if (setting.LeftToBindrune)
+            {
+                WaitingForBindrune(setting, pin);
+                return;
+            }
+
             Wrapped("Your value", _detail, DetailInner, 13, Kept);
             ValueEditor(setting);
             Spacer(4f);
@@ -112,6 +126,58 @@ namespace Keepsake.UI
 
             Wrapped("Release hands the setting back to the profile and puts the profile's value back.",
                 _detail, DetailInner, 13, Dim);
+        }
+
+        /// <summary>
+        /// A keybind kept here before Bindrune was installed. Bindrune takes it over as yours the
+        /// next time it puts its keys back; until then it is not written from here.
+        /// </summary>
+        private static void WaitingForBindrune(Setting setting, Pin pin)
+        {
+            Wrapped("Your key", _detail, DetailInner, 13, Kept);
+            Wrapped(pin.Value, _detail, DetailInner, 19, Color.white, true);
+            Spacer(6f);
+            Wrapped("Bindrune keeps your keybinds, and takes this one over as yours the next time it puts " +
+                    "its keys back. Keepsake no longer writes it. If this stays here, the installed " +
+                    "Bindrune does not take keys over yet: set it as yours in Bindrune instead.",
+                _detail, DetailInner, 15, Color.white);
+            Spacer(6f);
+
+            var row = ButtonRow();
+            FixedButton("Release", row, 150f, 34f, () => Act(() =>
+            {
+                Keeper.Unpin(pin.Id);
+                return null;
+            }, Sfx.Released, () => $"{setting.Key} is no longer kept here."));
+        }
+
+        /// <summary>
+        /// While Bindrune is not loaded, the keys it holds as yours are not applied by anything.
+        /// Offered here rather than done on its own, so a key never changes hands without asking.
+        /// </summary>
+        private static void BindruneOffer()
+        {
+            var keys = _bindruneKeys;
+            if (keys == null || keys.Count == 0) return;
+
+            Spacer(16f);
+            Wrapped("From Bindrune", _detail, DetailInner, 17, GUIManager.Instance.ValheimOrange, true);
+            Wrapped(Plural(keys.Count, "key") + " Bindrune keeps as yours " + (keys.Count == 1 ? "is" : "are") +
+                    " not protected while Bindrune is not running. Keepsake can keep " +
+                    (keys.Count == 1 ? "it" : "them") + " instead. Bindrune's own record stays as it is.",
+                _detail, DetailInner, 15, Color.white);
+
+            foreach (var keep in keys.Take(8))
+                Wrapped($"{keep.Setting.ModName} / {keep.Setting.Key}: {keep.Yours}", _detail, DetailInner, 13, Dim);
+            if (keys.Count > 8) Wrapped($"and {keys.Count - 8} more", _detail, DetailInner, 13, Dim);
+
+            Spacer(6f);
+            var row = ButtonRow();
+            FixedButton("Take over", row, 150f, 34f, () => Act(() =>
+            {
+                var taken = Keeper.TakeOverFromBindrune();
+                return taken > 0 ? null : "No key could be taken over.";
+            }, Sfx.Kept, () => "The keys from Bindrune are kept here now."));
         }
 
         /// <summary>A kept setting whose mod has not bound it this session, or is not installed.</summary>
@@ -253,6 +319,8 @@ namespace Keepsake.UI
                 problem = "That did not work, see the log.";
             }
 
+            // Keeping or releasing a keybind changes which of Bindrune's keys are left to offer.
+            RefreshBindruneKeys();
             Populate(keepScroll: true);
             if (problem != null)
             {

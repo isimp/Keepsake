@@ -4,6 +4,7 @@ using System.Linq;
 using System.Reflection;
 using BepInEx.Bootstrap;
 using BepInEx.Configuration;
+using UnityEngine;
 
 namespace Keepsake
 {
@@ -38,12 +39,18 @@ namespace Keepsake
         public string File;
         public string ModName;
         public string ModVersion;
+        public string ModGuid;
         public string Id;
         public ServerControl Server;
 
         public string Section => Entry.Definition.Section;
         public string Key => Entry.Definition.Key;
         public string Description => Entry.Description?.Description ?? "";
+
+        public bool IsKeybind => Entry.SettingType == typeof(KeyCode) || Entry.SettingType == typeof(KeyboardShortcut);
+
+        /// <summary>A keybind while Bindrune is loaded, which Keepsake leaves to it. See BindruneLink.</summary>
+        public bool LeftToBindrune => IsKeybind && SettingIndex.BindruneLoaded;
 
         /// <summary>Everything the search looks in, lowercased once.</summary>
         public string SearchText;
@@ -112,6 +119,12 @@ namespace Keepsake
 
         public static Setting Find(string id) => id != null && ById.TryGetValue(id, out var setting) ? setting : null;
 
+        public static Setting Find(ConfigEntryBase entry) => entry != null && ByEntry.TryGetValue(entry, out var setting) ? setting : null;
+
+        /// <summary>Whether Bindrune is loaded this session.</summary>
+        public static bool BindruneLoaded =>
+            Chainloader.PluginInfos.TryGetValue(BindruneLink.Guid, out var info) && info?.Instance != null;
+
         /// <summary>The file a loaded config lives in, relative to BepInEx/config, or null.</summary>
         public static string FileOf(ConfigFile config) =>
             config != null && Files.TryGetValue(config, out var file) ? file : null;
@@ -161,6 +174,7 @@ namespace Keepsake
                             File = file,
                             ModName = modName,
                             ModVersion = info.Metadata?.Version?.ToString() ?? "",
+                            ModGuid = info.Metadata?.GUID ?? "",
                             Id = PinFile.IdOf(file, entry.Definition.Section, entry.Definition.Key),
                             Server = ServerOf(entry),
                         };

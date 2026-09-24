@@ -69,6 +69,22 @@ namespace Keepsake.UI
         private static string _selectedId;
         private static string _query = "";
 
+        /// <summary>The keys Bindrune holds that Keepsake could take over, read when the panel opens.</summary>
+        private static System.Collections.Generic.List<Keeper.BindruneKeep> _bindruneKeys;
+
+        private static void RefreshBindruneKeys()
+        {
+            try
+            {
+                _bindruneKeys = Keeper.BindruneKeys();
+            }
+            catch (System.Exception ex)
+            {
+                Plugin.WarnOnce($"Keepsake: could not read Bindrune's keys: {ex.Message}", ex);
+                _bindruneKeys = null;
+            }
+        }
+
         /// <summary>What the last action had to say, shown in the footer until the next one.</summary>
         private static string _note;
         private static bool _noteIsProblem;
@@ -104,6 +120,7 @@ namespace Keepsake.UI
             // Mods bind settings at different times, so every open reads them again.
             Keeper.Reconcile();
             Keeper.Changed = OnChangedElsewhere;
+            RefreshBindruneKeys();
 
             _note = null;
             _redraws = 0;

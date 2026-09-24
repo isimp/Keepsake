@@ -47,8 +47,12 @@ namespace Keepsake
             var pins = PinFile.Read();
             if (pins == null || pins.Count == 0) return;
 
-            int restored = 0, missing = 0;
+            int restored = 0, missing = 0, toBindrune = 0;
             var learned = false;
+
+            // Keybinds are Bindrune's while it is installed, so none is written here then. See
+            // BindruneLink.
+            var bindrune = BindruneLink.InstalledOnDisk();
 
             foreach (var group in pins.GroupBy(p => p.File, StringComparer.OrdinalIgnoreCase))
             {
@@ -78,6 +82,12 @@ namespace Keepsake
                     if (!cfg.TryGet(pin.Section, pin.Key, out var current))
                     {
                         missing++;
+                        continue;
+                    }
+
+                    if (bindrune && BindruneLink.IsKeybindType(cfg.TypeOf(pin.Section, pin.Key)))
+                    {
+                        toBindrune++;
                         continue;
                     }
 
@@ -115,7 +125,8 @@ namespace Keepsake
             if (learned) PinFile.Write(pins);
 
             log.LogInfo($"Keepsake: {pins.Count} kept setting(s), {restored} put back before the mods loaded" +
-                        (missing > 0 ? $", {missing} not in their cfg file yet." : "."));
+                        (missing > 0 ? $", {missing} not in their cfg file yet" : "") +
+                        (toBindrune > 0 ? $", {toBindrune} keybind(s) left for Bindrune to take over." : "."));
         }
     }
 }
