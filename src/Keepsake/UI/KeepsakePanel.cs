@@ -14,6 +14,10 @@ namespace Keepsake.UI
         ProfileChanged,
 
         Changed,
+
+        /// <summary>Files and folders in BepInEx/config besides the mods' settings, to keep whole.</summary>
+        Files,
+
         /// <summary>Every setting the search matches. Only offered while searching.</summary>
         All,
         Mod,
@@ -146,6 +150,10 @@ namespace Keepsake.UI
             RefreshBindruneKeys();
             _showBindruneOffer = false;
 
+            // Mods add and change their files between opens, so the Files list is read again, on
+            // another thread so the panel opens without waiting for it.
+            StartReadingFiles();
+
             _note = null;
             _redraws = 0;
             _slowestMs = 0;
@@ -174,6 +182,7 @@ namespace Keepsake.UI
             if (!quietly) Sfx.Play(Sfx.PanelClose);
             _closedFrame = Time.frameCount;
             RememberScroll();
+            ClearPreview();
             UnityEngine.Object.Destroy(_root);
             GUIManager.BlockInput(false);
             _root = null;
@@ -200,6 +209,8 @@ namespace Keepsake.UI
 
         public static void Tick()
         {
+            TickFiles();
+
             // A new window's scroll views may not know their height until a frame has passed, and
             // the lists size their row pools from it.
             if (_rebindNextFrame)
@@ -421,9 +432,10 @@ namespace Keepsake.UI
             var was = _query;
             _query = (text ?? "").Trim();
 
-            // A search starts across everything; a mod on the left narrows it from there. Clearing
-            // the search goes back to where you were before it.
-            if (was.Length == 0 && _query.Length > 0)
+            // A search starts across every setting; a mod on the left narrows it from there. In the
+            // Files list it searches the files instead. Clearing the search goes back to where you
+            // were before it.
+            if (was.Length == 0 && _query.Length > 0 && _source != Source.Files)
             {
                 _sourceBeforeSearch = _source;
                 _modBeforeSearch = _mod;

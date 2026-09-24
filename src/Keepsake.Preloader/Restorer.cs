@@ -128,6 +128,32 @@ namespace Keepsake
         }
 
         /// <summary>
+        /// Every file Keepsake may write for the kept files: each one in BepInEx/config and its
+        /// copy, for the leftover check.
+        /// </summary>
+        public static IEnumerable<string> KeptFilePaths(IEnumerable<KeptPath> kept)
+        {
+            foreach (var entry in kept)
+            {
+                List<string> copies;
+                try
+                {
+                    copies = KeptFiles.CopiedFiles(entry);
+                }
+                catch (Exception)
+                {
+                    continue;
+                }
+
+                foreach (var path in copies)
+                {
+                    yield return KeptFiles.Live(path);
+                    yield return KeptFiles.Copy(path);
+                }
+            }
+        }
+
+        /// <summary>
         /// Removes the files a write left behind when the game stopped between writing a file
         /// aside and swapping it in (see PinFile.ReplaceText). The file it was meant to replace
         /// is whole in that case, so the leftover is only in the way: under BepInEx/config, a

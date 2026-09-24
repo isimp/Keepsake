@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.4.0
+
+Files and folders in BepInEx/config can be kept whole, from the new Files place in the panel. Keepsake saves a copy while the game runs and puts it back at launch when a profile sync replaced or removed the file, so a mod that keeps state in files, such as Seasonality's timer for each world, carries on where you left it. The Files list leaves out images unless asked, and shows a text file whole in a viewer of its own, or the image itself.
+
+Keep all over a mod's settings keeps every one of them at once, and Release all releases them again.
+
 ## 0.3.0
 
 Profile changes to values you keep now wait until you answer them, across launches, and a line in the corner says so once your character appears. General/ProfileChangeNotice turns that line off.

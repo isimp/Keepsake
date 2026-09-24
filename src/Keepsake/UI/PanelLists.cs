@@ -20,13 +20,13 @@ namespace Keepsake.UI
 
         private static Text _headerTitle;
         private static Text _headerInfo;
-        private static GameObject _headerButton;
+        private static readonly GameObject[] HeaderButtons = new GameObject[2];
+        private static readonly Action[] HeaderActions = new Action[2];
 
-        /// <summary>What the header button acts on: the listed changes that can be kept, or the kept settings not loaded.</summary>
+        /// <summary>What the header buttons act on: the listed settings that can be kept, the kept ones, and the kept ones not loaded.</summary>
         private static List<Setting> _keepable = new List<Setting>();
+        private static List<string> _releasable = new List<string>();
         private static List<string> _unloaded = new List<string>();
-
-        private const float HeaderButtonWidth = 220f;
 
         private static VirtualList<SourceItem, SourceView> _sourceList;
         private static VirtualList<SettingItem, SettingView> _settingList;
@@ -48,6 +48,9 @@ namespace Keepsake.UI
             public string ModName;
             public string Section;
             public string Key;
+
+            /// <summary>A file or folder in the Files list, instead of a setting.</summary>
+            public ConfigItem Item;
         }
 
         private sealed class SettingItem
@@ -63,6 +66,10 @@ namespace Keepsake.UI
             public Source Source;
             public string Mod;
             public int Count;
+
+            /// <summary>Shown instead of Count when set, such as kept files out of all of them.</summary>
+            public string CountText;
+
             public bool HasKept;
         }
 
@@ -74,6 +81,7 @@ namespace Keepsake.UI
             public Text Key;
             public RectTransform KeyRect;
             public Text Value;
+            public RectTransform ValueRect;
             public Text Tag;
             public SettingItem Item;
         }
@@ -121,19 +129,25 @@ namespace Keepsake.UI
             infoRect.offsetMin = new Vector2(12f, 4f);
             infoRect.offsetMax = new Vector2(-12f, 24f);
 
-            _headerButton = Button("", strip.transform, HeaderButtonWidth, 32f, HeaderAction);
-            AnchorRight(_headerButton, -10f, -HeaderHeight / 2f);
-            _headerButton.SetActive(false);
+            for (var i = 0; i < HeaderButtons.Length; i++)
+            {
+                var slot = i;
+                HeaderButtons[i] = Button("", strip.transform, 150f, 32f, () => HeaderActions[slot]?.Invoke());
+                HeaderButtons[i].SetActive(false);
+            }
+
+            BuildFileFilter(strip.transform);
         }
 
-        /// <summary>The header button: Keep all over the changes, Release not loaded over the kept settings.</summary>
-        private static void HeaderAction()
+        /// <summary>A button over the middle list: what it says, how wide it is, and what it does.</summary>
+        private sealed class HeaderButton
         {
-            if (_source == Source.Kept) ReleaseUnloaded();
-            else KeepAll();
+            public string Text;
+            public float Width;
+            public Action Act;
         }
 
-        /// <summary>Keeps every change listed that can be kept, each at the value it has now.</summary>
+        /// <summary>Keeps every setting listed that can be kept, each at the value it has now.</summary>
         private static void KeepAll()
         {
             var settings = _keepable.ToList();
@@ -143,6 +157,18 @@ namespace Keepsake.UI
                 kept = Keeper.PinAll(settings);
                 return kept > 0 ? null : "None of these could be kept.";
             }, Sfx.Kept, () => $"{Plural(kept, "setting")} kept at {(kept == 1 ? "its value" : "their values")}. A profile sync leaves {(kept == 1 ? "it" : "them")} alone now.");
+        }
+
+        /// <summary>Releases every kept setting listed, each back to the profile's value.</summary>
+        private static void ReleaseAll()
+        {
+            var ids = _releasable.ToList();
+            var released = 0;
+            Act(() =>
+            {
+                released = Keeper.UnpinAll(ids);
+                return released > 0 ? null : "Nothing could be released.";
+            }, Sfx.Released, () => $"{Plural(released, "setting")} released, back to the profile's {(released == 1 ? "value" : "values")}.");
         }
 
         /// <summary>
@@ -162,42 +188,62 @@ namespace Keepsake.UI
         }
 
         /// <summary>
-        /// Shows the header button over a list it has something to do in, and makes room for it.
-        /// Kept settings not loaded are only offered once a world is up, since some mods bind
-        /// settings only then and would look gone at the start menu.
+        /// Shows the buttons a list has something for, and makes room for them: Keep all over the
+        /// changes and over a mod, Release all over a mod with kept settings, and Release not
+        /// loaded over the kept settings. That one is only offered once a world is up, since some
+        /// mods bind settings only then and would look gone at the start menu.
         /// </summary>
-        private static void UpdateHeaderButton(List<Row> rows)
+        private static void UpdateHeaderButtons(List<Row> rows)
         {
-            _keepable = _source == Source.Changed
+            _keepable = _source == Source.Changed || _source == Source.Mod
                 ? rows.Select(r => r.Setting).Where(Keeper.CanPin).ToList()
                 : new List<Setting>();
+            _releasable = _source == Source.Mod
+                ? rows.Where(r => r.Setting != null && Keeper.Find(r.Id) != null).Select(r => r.Id).ToList()
+                : new List<string>();
             _unloaded = _source == Source.Kept && Player.m_localPlayer != null
                 ? rows.Where(r => r.Setting == null).Select(r => r.Id).ToList()
                 : new List<string>();
 
-            var text = _keepable.Count > 0 ? $"Keep all ({_keepable.Count})"
-                : _unloaded.Count > 0 ? $"Release not loaded ({_unloaded.Count})"
-                : null;
+            var wanted = new List<HeaderButton>();
+            if (_keepable.Count > 0) wanted.Add(new HeaderButton { Text = $"Keep all ({_keepable.Count})", Width = 150f, Act = KeepAll });
+            if (_releasable.Count > 0) wanted.Add(new HeaderButton { Text = $"Release all ({_releasable.Count})", Width = 165f, Act = ReleaseAll });
+            if (_unloaded.Count > 0) wanted.Add(new HeaderButton { Text = $"Release not loaded ({_unloaded.Count})", Width = 220f, Act = ReleaseUnloaded });
 
-            if (_headerButton != null)
+            // Placed from the right edge inwards, the first one outermost.
+            var right = 10f;
+            for (var i = 0; i < HeaderButtons.Length; i++)
             {
-                _headerButton.SetActive(text != null);
-                var label = _headerButton.GetComponentInChildren<Text>();
-                if (label != null && text != null) label.text = text;
+                var button = HeaderButtons[i];
+                if (button == null) continue;
+
+                var spec = i < wanted.Count ? wanted[i] : null;
+                HeaderActions[i] = spec?.Act;
+                button.SetActive(spec != null);
+                if (spec == null) continue;
+
+                var label = button.GetComponentInChildren<Text>();
+                if (label != null) label.text = spec.Text;
+                ((RectTransform)button.transform).sizeDelta = new Vector2(spec.Width, 32f);
+                AnchorRight(button, -right, -HeaderHeight / 2f);
+                right += spec.Width + 8f;
             }
 
-            var right = text != null ? -(HeaderButtonWidth + 22f) : -12f;
+            var filter = PlaceFileFilter(right);
+            right += filter;
+
+            var inset = wanted.Count > 0 || filter > 0f ? -(right + 12f) : -12f;
             foreach (var line in new[] { _headerTitle, _headerInfo })
             {
                 var rect = (RectTransform)line.transform;
-                rect.offsetMax = new Vector2(right, rect.offsetMax.y);
+                rect.offsetMax = new Vector2(inset, rect.offsetMax.y);
             }
         }
 
         private static void UpdateHeader(List<Row> rows, bool searching)
         {
             if (_headerTitle == null || _headerInfo == null) return;
-            UpdateHeaderButton(rows);
+            UpdateHeaderButtons(rows);
 
             var mods = rows.Select(r => r.ModName).Distinct().Count();
             var across = $"{Plural(rows.Count, "setting")} in {Plural(mods, "mod")}";
@@ -228,6 +274,10 @@ namespace Keepsake.UI
                     _headerInfo.text = rows.Count == 0
                         ? "Kept settings whose profile's value changed while you kept yours"
                         : $"{across} kept at your value, whose profile's value changed since you kept it";
+                    break;
+
+                case Source.Files:
+                    UpdateFilesHeader(rows, searching);
                     break;
 
                 case Source.Changed:
@@ -304,6 +354,7 @@ namespace Keepsake.UI
                 case Source.Kept: rows = Sorted(kept); break;
                 case Source.ProfileChanged: rows = Sorted(profileChanged); break;
                 case Source.Changed: rows = Sorted(changed); break;
+                case Source.Files: rows = FileRows(words); break;
                 case Source.Mod: rows = matched.Where(s => s.ModName == _mod).Select(RowOf).ToList(); break;
                 default: rows = matched.Select(RowOf).ToList(); break;
             }
@@ -318,6 +369,7 @@ namespace Keepsake.UI
                     _source == Source.Kept ? "Nothing is kept yet. Pick a mod on the left, or search, then select a setting and keep it." :
                     _source == Source.ProfileChanged ? "Every change the profile made has been looked at. Your values stay kept." :
                     _source == Source.Changed ? "No setting has changed since the game started. Settings you change in a config manager show up here." :
+                    _source == Source.Files ? "BepInEx/config holds no files besides the mods' settings." :
                     "This mod has no settings.";
 
             clock.Stop();
@@ -348,6 +400,7 @@ namespace Keepsake.UI
                 items.Add(new SourceItem { Text = "Profile changed", Source = Source.ProfileChanged, Count = profileChanged, HasKept = true });
 
             items.Add(new SourceItem { Text = "Changed this session", Source = Source.Changed, Count = changed });
+            items.Add(FilesSourceItem());
             if (searching)
                 items.Add(new SourceItem { Text = "All matches", Source = Source.All, Count = counts.Values.Sum() });
 
@@ -370,6 +423,19 @@ namespace Keepsake.UI
 
             foreach (var row in rows)
             {
+                // A folder's own row heads its files, so the files at the top of config are the
+                // only ones that need a heading.
+                if (row.Item != null)
+                {
+                    if (!row.Item.IsFolder && row.Item.Parent.Length == 0 && group == null)
+                    {
+                        group = "BepInEx/config";
+                        items.Add(new SettingItem { Heading = group });
+                    }
+                    items.Add(new SettingItem { Row = row });
+                    continue;
+                }
+
                 var heading = _source == Source.Mod ? row.Section : row.ModName + "  /  " + row.Section;
                 if (heading != group)
                 {
@@ -483,7 +549,7 @@ namespace Keepsake.UI
             view.Name.font = GUIManager.Instance.AveriaSerif;
             view.Name.fontSize = 15;
             view.Name.color = item.HasKept && item.Count > 0 ? Kept : Color.white;
-            view.Count.text = item.Count.ToString();
+            view.Count.text = item.CountText ?? item.Count.ToString();
         }
 
         private static SettingView CreateSettingView(RectTransform root)
@@ -517,7 +583,7 @@ namespace Keepsake.UI
 
             var value = Label("", root, 10f, RowHeight, 14, Color.white);
             view.Value = OneLine(value);
-            Stretch(value, 0.5f, 1f, 2f, -(TagColumn + 8f));
+            view.ValueRect = Stretch(value, 0.5f, 1f, 2f, -(TagColumn + 8f));
 
             var tag = Label("", root, 10f, RowHeight, 12, Dim);
             view.Tag = OneLine(tag);
@@ -530,6 +596,10 @@ namespace Keepsake.UI
         private static void BindSetting(SettingView view, SettingItem item)
         {
             view.Item = item;
+
+            // A pooled row may have been a file row, which moves its columns.
+            view.KeyRect.offsetMin = new Vector2(12f, view.KeyRect.offsetMin.y);
+            view.ValueRect.anchorMin = new Vector2(0.5f, view.ValueRect.anchorMin.y);
 
             if (item.Heading != null)
             {
@@ -546,6 +616,12 @@ namespace Keepsake.UI
             }
 
             var row = item.Row;
+            if (row.Item != null)
+            {
+                BindFile(view, row);
+                return;
+            }
+
             var pin = row.Pin ?? Keeper.Find(row.Id);
             var kept = pin != null;
             var current = row.Setting != null ? row.Setting.Current : pin?.Value;

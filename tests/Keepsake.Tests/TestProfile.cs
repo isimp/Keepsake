@@ -37,6 +37,7 @@ namespace Keepsake.Tests
             SetPath(nameof(Paths.ConfigPath), ConfigDir);
 
             Keeper.Reset();
+            FileKeeper.Reset();
             Session.Reset();
             SettingIndex.Reset();
             SettingIndex.Sources = Loaded;

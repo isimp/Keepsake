@@ -45,13 +45,23 @@ Each mod reads the other's file only in the version it knows and otherwise leave
 
 One known gap: a Jotunn button that is backed by a setting but bound to a gamepad axis is shown read-only in Bindrune, while Keepsake still leaves it to Bindrune as a keybind, so neither keeps it.
 
+## Kept files
+
+Some mods keep state in files of their own under `BepInEx/config` rather than in settings, such as Seasonality's timer per world in `Seasonality/LastSeasonChangeData`. A sync replaces those with the owner's copies and deletes the ones the owner does not have. A file or folder can be kept whole, from the Files place in the panel. It lists every folder under BepInEx/config with its files under it, leaving out the mods' own cfg files, whose settings are kept one by one, BepInEx.cfg and logs. Images are left out of the list unless its filter asks for them, since mods ship textures by the hundred. The Files count on the left is kept files out of all of them; the folder is read on another thread as the panel opens, so the count fills in a moment later. A file's detail shows a text file in a read only viewer of its own, with a darker background and a fixed width font, up to its first 64 KB, and the image when it is a PNG or JPEG.
+
+While the game runs, the plugin checks the kept files every ten seconds and when the game closes, and copies every one that changed into `BepInEx/keepsake-files`, each copy under its own path with `.kept` added to its name. A sync takes `cfg`, `txt`, `json`, `yml`, `yaml` and `ini` files from anywhere in the profile, so a plain copy of such a file would be synced like the original. Every copy carries the time of the file it was made from. At launch, the preloader puts a copy back wherever the file is missing or differs in length or time, which is what a sync leaves behind, before any mod reads it. A kept folder covers every file in it, and every file a mod adds to it later. Files in a kept folder that have no copy, such as ones a sync brought, are left as they are, and a copy stays when its file is gone, so a file a sync removed comes back rather than being forgotten. Releasing a file or folder removes its copies and leaves the file itself as it is.
+
+A kept file keeps whatever lands on disk while the game runs, including what a mod writes from data a server sent it: ServerSync keeps a server's values out of the cfg files, but nothing does that for a mod's own files. Seasonality, for one, saves the timer a server sends under the server's world name, apart from the timers of your own worlds. At launch your copy wins, so a kept file changed while the game is closed is put back to your copy.
+
+For Seasonality, keeping the Season setting and the `Seasonality/LastSeasonChangeData` folder together lets your own worlds carry on through syncs: the setting holds which season it is, and follows the mod as the season moves on, and the folder when it last changed. Making Season quiet saves being asked each time the owner's season moves.
+
 ## The panel
 
 The left column lists your kept settings, the settings changed since the game started, and every mod. The middle column lists the chosen place's settings under their sections, with a bar on values that differ from the mod's default, and the right column shows the selected setting's description, default, allowed values and, once kept, its editor. The search runs over mod names, file names, sections, setting names and descriptions. The panel reopens where it was left, with the same place, search, selection and scroll; clearing the search goes back to the place chosen before it, with both lists at the top.
 
 Both lists create rows only for what is on screen and reuse them while scrolling, so the number of settings does not affect how fast the panel draws. Settings changed while the panel is open redraw the lists at most twice a second, and the right column only when the change is to the setting shown there, so an open dropdown stays open. Opening the panel reads every mod's settings again, and sorts them again only when a mod added or dropped one; the first time in a session, the log says how long opening took, apart from the first drawing of the lists, which also creates their rows.
 
-A setting counts as changed this session when it differs from the value it had when Keepsake first saw it. Changes Keepsake makes itself do not count. Keep all, over that list, keeps every setting in it that is not kept yet, each at its current value and with its value at launch as the profile's, in one write.
+A setting counts as changed this session when it differs from the value it had when Keepsake first saw it. Changes Keepsake makes itself do not count. Keep all, over that list and over a mod's settings, keeps every setting in it that is not kept yet, each at its current value and with its value at launch as the profile's, in one write; each is then kept like one kept by hand. Over a mod, Release all releases its kept settings again, each back to the profile's value.
 
 Profile changed, on the left while there are any, lists the kept settings whose profile's value changed while you kept yours. Each one stays there, across launches, until you take the profile's value (the setting stays kept, at that value), stay with yours, give it another value, or release it.
 
@@ -63,13 +73,15 @@ Release not loaded, over the kept settings once a world is up, releases every ke
 
 `BepInEx/keepsake.changes` holds, under `[changes]`, the profile changes waiting for an answer, one per line, tab separated: the cfg file, the section, the setting, the profile's value before and its value now; and under `[quiet]` the kept settings whose changes are recorded without asking: the cfg file, the section and the setting. It is removed when it would hold nothing. Like the pins file it sits outside `config`, with an extension no profile sync picks up.
 
+`BepInEx/keepsake.files` lists the kept files and folders, one per line, relative to `BepInEx/config`, a folder with a slash at the end. Paths leaving `BepInEx/config` are skipped. The copies are in `BepInEx/keepsake-files`.
+
 Keepsake's own settings are in `BepInEx/config/isimp.Keepsake.cfg`.
 
 ## Limits
 
-Kept values are written into the real cfg files, so the owner of a shared profile sends their kept values to everyone who follows it.
+Kept values are written into the real cfg files, and kept files stay the real files, so the owner of a shared profile sends what they keep to everyone who follows it.
 
-Only settings of loaded BepInEx plugins whose cfg file is under `BepInEx/config` are listed. Settings a mod keeps in a `ConfigFile` it creates itself, in its own file format, or outside that folder are not reachable, and neither is `BepInEx.cfg`, which is read before the preloader runs.
+Only settings of loaded BepInEx plugins whose cfg file is under `BepInEx/config` are listed. Settings a mod keeps in a `ConfigFile` it creates itself, or in its own file format under that folder, can be kept as a whole file instead. Files outside that folder are not reachable, and neither is `BepInEx.cfg`, which is read before the preloader runs.
 
 A value containing a tab or a line break cannot be kept. Flag enums are edited as text. A value added to the pins file by hand that the setting refuses is reported once in the log, and the mod falls back to its default as it would for any unreadable cfg value.
 
@@ -77,7 +89,7 @@ The preloader also runs on a dedicated server if installed there, and does nothi
 
 ## Tests
 
-`tests/Keepsake.Tests` covers what needs no game: the pins file, the cfg text the preloader rewrites, both files shared with Bindrune, checked against the samples in `tests/contract`, the preloader's pass over a temporary profile, keeping, releasing, setting and following values on real BepInEx settings, and keybinds with and without Bindrune loaded. The plugin class needs the game, so the tests stand in for it with `PluginShim.cs`, and hand their own settings to `SettingIndex` in place of the loaded plugins, and say themselves whether Bindrune is loaded. The tests run on .NET 8 against the real `BepInEx.dll` of a local profile, which is not part of the repository, so they run locally rather than on the build server:
+`tests/Keepsake.Tests` covers what needs no game: the pins file, the cfg text the preloader rewrites, both files shared with Bindrune, checked against the samples in `tests/contract`, the preloader's pass over a temporary profile, keeping, releasing, setting and following values on real BepInEx settings, keybinds with and without Bindrune loaded, and kept files saved and put back over a sync. The plugin class needs the game, so the tests stand in for it with `PluginShim.cs`, and hand their own settings to `SettingIndex` in place of the loaded plugins, and say themselves whether Bindrune is loaded. The tests run on .NET 8 against the real `BepInEx.dll` of a local profile, which is not part of the repository, so they run locally rather than on the build server:
 
 ```
 dotnet test tests/Keepsake.Tests

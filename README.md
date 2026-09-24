@@ -1,16 +1,28 @@
 # Keepsake
 
-Keep your own value for any mod setting on a shared profile. When a profile sync would put the profile's value back, Keepsake puts yours in again before any mod has read it, so even settings a mod only reads at startup keep your value.
-
-Press Home to open the panel. Pick a mod on the left or search by mod, setting or description, select a setting and press Keep. A kept setting can be given a new value right there or in any config manager, and Keepsake follows along. Release hands it back to the profile and puts the profile's value back. The panel also lists every setting that changed since the game started, so something you just tried out in a config manager is one click away from being kept, or all of them at once with Keep all. When the profile changes a value you keep, Keepsake says so once your character appears, and the panel shows it under Profile changed until you take the profile's new value or stay with yours. A setting the profile changes all the time, such as a volume, can be made quiet, so its changes are recorded without asking.
-
-Settings a server hands out while you are connected to it still follow the server, and your value is back when you leave. Keepsake runs on your own machine only, and servers do not need it. It needs Jotunn.
-
-Bindrune does the same for keybinds, and shows every keybind of the game and your mods in one panel, with the clashes between them. With Bindrune installed, Keepsake leaves keybinds to it, and Bindrune takes over any keybind you kept here before. Without it, Keepsake keeps keybinds like any other setting and offers to take over the keys Bindrune kept for you. Bindrune is on Thunderstore at https://thunderstore.io/c/valheim/p/isimp/Bindrune/ and on Hexium at https://valheim.hexium.gg/mods/isimp/Bindrune
-
-Your kept values are stored in BepInEx/keepsake.pins, a file profile syncs leave alone. They are also written into each mod's own config file, so if you are the one sharing a profile, whatever you keep goes out to everyone who follows it.
+Keep your own value for any mod setting on a shared profile. When a profile sync would put the profile's value back, Keepsake puts yours in first, before any mod reads it.
 
 ![The Keepsake panel](https://raw.githubusercontent.com/isimp/Keepsake/main/docs/images/screenshot.webp)
+
+## Getting started
+
+Press Home to open the panel. Pick a mod on the left or search, select a setting and press Keep. You can change a kept value right there or in any config manager, and Keepsake follows along. Release hands the setting back to the profile.
+
+## What else it does
+
+Changed this session lists what you just tried out in a config manager, and Keep all keeps that whole list, or all of a mod's settings, in one click.
+
+When the profile changes a value you keep, Keepsake tells you once your character appears, and you choose whether to take the new value. A setting the profile changes all the time, such as a volume, can be made quiet.
+
+Files a mod keeps its state in, such as Seasonality's timer for each world, can be kept whole from the Files place, so your own worlds carry on where you left them.
+
+## Good to know
+
+Settings a server hands out while you are connected still follow the server, and your value is back when you leave. Keepsake runs on your own machine only and needs Jotunn.
+
+If you are the one sharing the profile, what you keep goes out to everyone who follows it, because kept values are written into the mods' own config files.
+
+Keybinds are left to Bindrune when it is installed, which keeps them the same way and shows every keybind of the game and your mods in one panel. Bindrune is on Thunderstore at https://thunderstore.io/c/valheim/p/isimp/Bindrune/ and on Hexium at https://valheim.hexium.gg/mods/isimp/Bindrune
 
 ## AI notice
 
@@ -18,7 +30,7 @@ Most of Keepsake was written by Claude Code (Anthropic), which did the heavy lif
 
 ## Settings
 
-All settings are in BepInEx/config/isimp.Keepsake.cfg, each with a description. They include the key that opens the panel, the panel's size and whether it plays sounds.
+All settings are in BepInEx/config/isimp.Keepsake.cfg, each with a description. They include the key that opens the panel, the panel's size, its sounds and the notice about profile changes.
 
 ## More
 

@@ -22,6 +22,13 @@ namespace Keepsake.UI
         {
             if (_detail == null) return;
             Clear(_detail);
+            ClearPreview();
+
+            if (IsFileId(_selectedId))
+            {
+                FileDetail(_selectedId);
+                return;
+            }
 
             var setting = SettingIndex.Find(_selectedId);
             var pin = _selectedId != null ? Keeper.Find(_selectedId) : null;

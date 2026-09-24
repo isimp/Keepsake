@@ -109,12 +109,13 @@ namespace Keepsake
 
         private void OnApplicationQuit() => FlushQuietly();
 
-        /// <summary>Writes the values followed from a config manager that are still waiting, before the game closes.</summary>
+        /// <summary>Writes the values followed from a config manager that are still waiting, and copies of kept files, before the game closes.</summary>
         private static void FlushQuietly()
         {
             try
             {
                 Keeper.Flush();
+                FileKeeper.Flush();
             }
             catch (Exception ex)
             {
@@ -127,6 +128,7 @@ namespace Keepsake
             try
             {
                 Keeper.Tick(Time.realtimeSinceStartup);
+                FileKeeper.Tick(Time.realtimeSinceStartup);
                 ReconcileOnce();
                 CheckWaitingOnce();
                 NoticeProfileChangesOnce();

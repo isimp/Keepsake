@@ -40,6 +40,20 @@ namespace Keepsake.Tests
         }
 
         [Fact]
+        public void KeepingAllOfAModPassesOverItsKeybindsWhileBindruneIsLoaded()
+        {
+            using var profile = new TestProfile();
+            Keys(profile).open.ConfigFile.Bind("General", "Speed", 5, "How fast.");
+            profile.Index();
+            SettingIndex.IsBindruneLoaded = () => true;
+
+            var kept = Keeper.PinAll(SettingIndex.All.Where(s => s.ModName == "a"));
+
+            Assert.Equal(1, kept);
+            Assert.Equal(new[] { Line("Speed", "5", "5") }, profile.PinLines());
+        }
+
+        [Fact]
         public void AWaitingKeybindIsNeitherPutBackNorFollowed()
         {
             using var profile = new TestProfile();
