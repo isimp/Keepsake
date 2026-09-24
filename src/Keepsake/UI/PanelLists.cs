@@ -335,7 +335,9 @@ namespace Keepsake.UI
                 // it is not in, so moving somewhere else starts with nothing selected.
                 if (item.Source != _source || item.Mod != _mod)
                 {
+                    KeyCapture.Cancel();
                     _selectedId = null;
+                    _showBindruneOffer = false;
                     _note = null;
                 }
 
@@ -469,7 +471,9 @@ namespace Keepsake.UI
         /// <summary>Moves the highlight and shows the setting on the right, without redrawing the lists.</summary>
         private static void Select(string id)
         {
+            KeyCapture.Cancel();
             _selectedId = id;
+            _showBindruneOffer = false;
             _settingList?.Rebind();
 
             _note = null;

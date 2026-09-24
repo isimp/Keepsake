@@ -72,6 +72,12 @@ namespace Keepsake.UI
         /// <summary>The keys Bindrune holds that Keepsake could take over, read when the panel opens.</summary>
         private static System.Collections.Generic.List<Keeper.BindruneKeep> _bindruneKeys;
 
+        /// <summary>Whether the right column shows the keys from Bindrune rather than a setting.</summary>
+        private static bool _showBindruneOffer;
+
+        /// <summary>Beside Close, only while Bindrune holds keys that nothing applies. See BindruneOffer.</summary>
+        private static GameObject _bindruneButton;
+
         private static void RefreshBindruneKeys()
         {
             try
@@ -90,6 +96,14 @@ namespace Keepsake.UI
         private static bool _noteIsProblem;
 
         public static bool IsOpen => _root != null;
+
+        private static int _closedFrame = -1;
+
+        /// <summary>
+        /// Whether the keyboard is the panel's this frame: while it is open, and in the frame it
+        /// closed in, so the key that closed it reaches nothing else.
+        /// </summary>
+        public static bool HoldsKeyboard => IsOpen || Time.frameCount == _closedFrame;
 
         /// <summary>True while any text field has the keyboard, so keys go to it and not to hotkeys.</summary>
         public static bool Typing
@@ -120,7 +134,9 @@ namespace Keepsake.UI
             // Mods bind settings at different times, so every open reads them again.
             Keeper.Reconcile();
             Keeper.Changed = OnChangedElsewhere;
+            KeyCapture.Changed = ShowDetail;
             RefreshBindruneKeys();
+            _showBindruneOffer = false;
 
             _note = null;
             _redraws = 0;
@@ -135,9 +151,12 @@ namespace Keepsake.UI
         public static void Close(bool quietly = false)
         {
             Keeper.Changed = null;
+            KeyCapture.Cancel();
+            KeyCapture.Changed = null;
             if (_root == null) return;
 
             if (!quietly) Sfx.Play(Sfx.PanelClose);
+            _closedFrame = Time.frameCount;
             UnityEngine.Object.Destroy(_root);
             GUIManager.BlockInput(false);
             _root = null;
@@ -146,6 +165,7 @@ namespace Keepsake.UI
             _emptyMessage = null;
             _detail = null;
             _search = null;
+            _bindruneButton = null;
             _repopulateAt = 0f;
 
             if (_redraws > 0)
@@ -207,7 +227,18 @@ namespace Keepsake.UI
             PopulateLists(Words(), keepScroll);
             ShowDetail();
             UpdateSummary();
+            UpdateBindruneButton();
             ShowNote();
+        }
+
+        private static void UpdateBindruneButton()
+        {
+            if (_bindruneButton == null) return;
+
+            var count = _bindruneKeys?.Count ?? 0;
+            _bindruneButton.SetActive(count > 0);
+            var label = _bindruneButton.GetComponentInChildren<Text>();
+            if (label != null) label.text = $"From Bindrune ({count})";
         }
 
         // ---------- construction ----------
@@ -225,6 +256,18 @@ namespace Keepsake.UI
 
             var close = Button("Close", _root.transform, 110f, 32f, () => Close());
             AnchorRight(close, -Margin, -36f);
+
+            _bindruneButton = Button("From Bindrune", _root.transform, 200f, 32f, () =>
+            {
+                KeyCapture.Cancel();
+                _selectedId = null;
+                _showBindruneOffer = true;
+                _note = null;
+                _settingList?.Rebind();
+                ShowDetail();
+                ShowNote();
+            });
+            AnchorRight(_bindruneButton, -Margin - 120f, -36f);
 
             var searchObject = GUIManager.Instance.CreateInputField(_root.transform,
                 new Vector2(0f, 1f), new Vector2(0f, 1f), Vector2.zero,

@@ -28,8 +28,14 @@ namespace Keepsake.UI
 
             if (setting == null && pin == null)
             {
+                if (_showBindruneOffer && _bindruneKeys != null && _bindruneKeys.Count > 0)
+                {
+                    BindruneOffer();
+                    return;
+                }
+
+                _showBindruneOffer = false;
                 Wrapped("Select a setting to see what it does and to keep it.", _detail, DetailInner, 15, Dim);
-                BindruneOffer();
                 return;
             }
 
@@ -63,7 +69,7 @@ namespace Keepsake.UI
             if (range != null) Fact("Allowed", range);
 
             var choices = ChoicesOf(setting.Entry);
-            if (choices != null && choices.Length > MaxChoiceButtons)
+            if (!setting.IsKeybind && choices != null && choices.Length > MaxChoiceButtons)
                 Fact("Choices", choices.Length <= 20 ? string.Join(", ", choices) : $"one of {choices.Length} values");
 
             var initial = Session.InitialOf(setting.Id);
@@ -160,8 +166,7 @@ namespace Keepsake.UI
             var keys = _bindruneKeys;
             if (keys == null || keys.Count == 0) return;
 
-            Spacer(16f);
-            Wrapped("From Bindrune", _detail, DetailInner, 17, GUIManager.Instance.ValheimOrange, true);
+            Wrapped("From Bindrune", _detail, DetailInner, 21, GUIManager.Instance.ValheimOrange, true);
             Wrapped(Plural(keys.Count, "key") + " Bindrune keeps as yours " + (keys.Count == 1 ? "is" : "are") +
                     " not protected while Bindrune is not running. Keepsake can keep " +
                     (keys.Count == 1 ? "it" : "them") + " instead. Bindrune's own record stays as it is.",
@@ -208,6 +213,12 @@ namespace Keepsake.UI
             var type = setting.Entry.SettingType;
             var current = setting.Current ?? "";
 
+            if (setting.IsKeybind)
+            {
+                KeyEditor(setting, current);
+                return;
+            }
+
             if (type == typeof(bool))
             {
                 var on = string.Equals(current, "true", StringComparison.OrdinalIgnoreCase);
@@ -251,7 +262,34 @@ namespace Keepsake.UI
             Wrapped("Type a value and press Enter.", _detail, DetailInner, 12, Dim);
         }
 
-        /// <summary>A scrolling list for choices too many for a button each, such as a key.</summary>
+        /// <summary>A keybind is set by pressing the key. See KeyCapture.</summary>
+        private static void KeyEditor(Setting setting, string current)
+        {
+            var capturing = KeyCapture.IsCapturingFor(setting);
+            Wrapped(capturing ? "press a key..." : current, _detail, DetailInner, 19, capturing ? Kept : Color.white, true);
+
+            var row = ButtonRow();
+            FixedButton(capturing ? "Cancel" : "Set key", row, 150f, 34f, () =>
+            {
+                if (KeyCapture.IsCapturingFor(setting)) KeyCapture.Cancel();
+                else KeyCapture.Start(setting, value => Set(setting, value));
+            });
+            FixedButton("No key", row, 150f, 34f, () =>
+            {
+                KeyCapture.Cancel();
+                Set(setting, KeyCapture.NoKey(setting));
+            });
+
+            if (!capturing) return;
+
+            var shortcut = setting.Entry.SettingType == typeof(KeyboardShortcut);
+            Wrapped(shortcut
+                    ? "Press the key, holding Alt, Ctrl or Shift for a combination. A modifier pressed on its own becomes the key. Escape cancels."
+                    : "Press the key. A modifier pressed on its own becomes the key. Escape cancels.",
+                _detail, DetailInner, 13, Dim);
+        }
+
+        /// <summary>A scrolling list for choices too many for a button each.</summary>
         private static void ChoiceDropdown(Setting setting, string[] choices, string current)
         {
             var options = choices.ToList();

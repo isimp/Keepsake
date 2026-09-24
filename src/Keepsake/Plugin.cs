@@ -99,6 +99,13 @@ namespace Keepsake
                 ReconcileOnce();
                 CheckWaitingOnce();
 
+                // While a key is being set, every key belongs to that, the open key and Escape too.
+                if (KeyCapture.Active)
+                {
+                    KeyCapture.Tick();
+                    return;
+                }
+
                 if (KeepsakePanel.IsOpen) KeepsakePanel.Tick();
 
                 // Escape still closes the panel while typing, but a letter belongs to the text
