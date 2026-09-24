@@ -16,7 +16,7 @@ namespace Keepsake.UI
         private static float DetailInner => DetailWidth - 40f;
 
         /// <summary>Choice lists up to this long are shown as buttons, one per value; longer ones as a dropdown.</summary>
-        private const int MaxChoiceButtons = 10;
+        private const int MaxChoiceButtons = 4;
 
         private static void ShowDetail()
         {
