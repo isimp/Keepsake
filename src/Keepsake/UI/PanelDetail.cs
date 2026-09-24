@@ -15,7 +15,7 @@ namespace Keepsake.UI
     {
         private static float DetailInner => DetailWidth - 40f;
 
-        /// <summary>Choice lists up to this long are shown as buttons, one per value; longer ones cycle.</summary>
+        /// <summary>Choice lists up to this long are shown as buttons, one per value; longer ones as a dropdown.</summary>
         private const int MaxChoiceButtons = 10;
 
         private static void ShowDetail()
@@ -63,7 +63,7 @@ namespace Keepsake.UI
 
             var choices = ChoicesOf(setting.Entry);
             if (choices != null && choices.Length > MaxChoiceButtons)
-                Fact("Choices", string.Join(", ", choices.Take(12).ToArray()) + (choices.Length > 12 ? ", ..." : ""));
+                Fact("Choices", choices.Length <= 20 ? string.Join(", ", choices) : $"one of {choices.Length} values");
 
             var initial = Session.InitialOf(setting.Id);
             if (Session.IsChanged(setting) && initial != null) Fact("At launch", initial);
@@ -165,11 +165,7 @@ namespace Keepsake.UI
                     return;
                 }
 
-                var index = Array.IndexOf(choices, current);
-                var next = choices[(index + 1) % choices.Length];
-                var cycle = ButtonRow();
-                FixedButton(current, cycle, DetailInner, 34f, () => Set(setting, next));
-                Wrapped("Click for the next choice.", _detail, DetailInner, 12, Dim);
+                ChoiceDropdown(setting, choices, current);
                 return;
             }
 
@@ -187,6 +183,41 @@ namespace Keepsake.UI
             });
 
             Wrapped("Type a value and press Enter.", _detail, DetailInner, 12, Dim);
+        }
+
+        /// <summary>A scrolling list for choices too many for a button each, such as a key.</summary>
+        private static void ChoiceDropdown(Setting setting, string[] choices, string current)
+        {
+            var options = choices.ToList();
+
+            // A value outside the list, such as one edited into the cfg file by hand, is shown at
+            // the top rather than letting the list claim a value the setting does not have.
+            var index = options.IndexOf(current);
+            if (index < 0)
+            {
+                options.Insert(0, current);
+                index = 0;
+            }
+
+            var go = GUIManager.Instance.CreateDropDown(_detail, new Vector2(0f, 1f), new Vector2(0f, 1f), Vector2.zero, 15, DetailInner, 34f);
+            Fix(go, DetailInner, 34f);
+
+            var dropdown = go.GetComponent<Dropdown>();
+
+            // The list is cloned from the template each time it opens, so the wheel speed is set
+            // on the template's scroll rect; the list itself does not exist yet.
+            var template = dropdown.template;
+            var scroll = template != null ? template.GetComponentInChildren<ScrollRect>(true) : null;
+            if (scroll != null) scroll.scrollSensitivity = 300f;
+
+            dropdown.ClearOptions();
+            dropdown.AddOptions(options);
+            dropdown.SetValueWithoutNotify(index);
+            dropdown.onValueChanged.AddListener(i =>
+            {
+                if (i < 0 || i >= options.Count || options[i] == setting.Current) return;
+                Set(setting, options[i]);
+            });
         }
 
         private static void ChoiceButton(string text, bool current, Transform row, Action onClick, float width = 110f, float height = 34f)
@@ -234,8 +265,12 @@ namespace Keepsake.UI
         }
 
         /// <summary>
-        /// The values a setting can take, when there is a short list of them: a plain enum, or an
+        /// The values a setting can take, when there is a list of them: a plain enum, or an
         /// AcceptableValueList. Flag enums combine values and are typed instead.
+        ///
+        /// An enum is listed by value, each under the name the cfg file saves it as. Some enums
+        /// give one value several names (KeyCode calls one key RightMeta, RightCommand and
+        /// RightApple), and listing the names would offer choices that save as another one.
         /// </summary>
         private static string[] ChoicesOf(ConfigEntryBase entry)
         {
@@ -243,7 +278,10 @@ namespace Keepsake.UI
             try
             {
                 if (type.IsEnum && !type.IsDefined(typeof(FlagsAttribute), false))
-                    return Enum.GetNames(type);
+                    return Enum.GetValues(type).Cast<object>()
+                        .Select(v => TomlTypeConverter.ConvertToString(v, type))
+                        .Distinct()
+                        .ToArray();
 
                 var acceptable = entry.Description?.AcceptableValues;
                 if (acceptable == null) return null;
