@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
-using System.IO;
-using System.Linq;
+using BepInEx;
 using BepInEx.Logging;
 using Mono.Cecil;
 
@@ -44,89 +43,23 @@ namespace Keepsake
 
         private static void Restore(ManualLogSource log)
         {
+            var leftovers = Restorer.RemoveLeftovers(Paths.ConfigPath, Paths.BepInExRootPath);
+            if (leftovers > 0) log.LogInfo($"Keepsake: removed {leftovers} file(s) left half written by a game that stopped mid-save.");
+
             var pins = PinFile.Read();
             if (pins == null || pins.Count == 0) return;
 
-            int restored = 0, missing = 0, toBindrune = 0;
-            var learned = false;
-
             // Keybinds are Bindrune's while it is installed, so none is written here then. See
             // BindruneLink.
-            var bindrune = BindruneLink.InstalledOnDisk();
+            var result = Restorer.Apply(pins, BindruneLink.InstalledOnDisk());
 
-            foreach (var group in pins.GroupBy(p => p.File, StringComparer.OrdinalIgnoreCase))
-            {
-                var path = PinFile.Absolute(group.Key);
-                if (!File.Exists(path))
-                {
-                    // The mod writes the file when it first binds its settings, and the plugin
-                    // puts the value in then.
-                    missing += group.Count();
-                    continue;
-                }
+            if (result.Learned) PinFile.Write(pins);
+            ProfileChanges.Hand(result.Changes);
 
-                CfgText cfg;
-                try
-                {
-                    cfg = CfgText.Load(path);
-                }
-                catch (Exception ex)
-                {
-                    log.LogWarning($"Keepsake: could not read {group.Key}: {ex.Message}");
-                    missing += group.Count();
-                    continue;
-                }
-
-                foreach (var pin in group)
-                {
-                    if (!cfg.TryGet(pin.Section, pin.Key, out var current))
-                    {
-                        missing++;
-                        continue;
-                    }
-
-                    if (bindrune && BindruneLink.IsKeybindType(cfg.TypeOf(pin.Section, pin.Key)))
-                    {
-                        toBindrune++;
-                        continue;
-                    }
-
-                    if (current == pin.Value)
-                    {
-                        if (pin.Profile == null)
-                        {
-                            pin.Profile = current;
-                            learned = true;
-                        }
-                        continue;
-                    }
-
-                    // Anything other than your value here came from the profile.
-                    if (pin.Profile != current) learned = true;
-                    pin.Profile = current;
-
-                    cfg.Set(pin.Section, pin.Key, pin.Value);
-                    restored++;
-                    log.LogInfo($"Keepsake: kept your value for {pin.File} [{pin.Section}] {pin.Key}: {pin.Value} (the profile has {current}).");
-                }
-
-                if (!cfg.Changed) continue;
-
-                try
-                {
-                    cfg.Save(path);
-                }
-                catch (Exception ex)
-                {
-                    log.LogWarning($"Keepsake: could not write {group.Key}: {ex.Message}");
-                }
-            }
-
-            if (learned) PinFile.Write(pins);
-
-            log.LogInfo($"Keepsake: {pins.Count} kept setting(s), {restored} put back before the mods loaded" +
-                        (missing > 0 ? $", {missing} not in their cfg file yet" : "") +
-                        (toBindrune > 0 ? $", {toBindrune} keybind(s) left for Bindrune to take over." : "."));
+            log.LogInfo($"Keepsake: {pins.Count} kept setting(s), {result.Restored} put back before the mods loaded" +
+                        (result.Changes.Count > 0 ? $", {result.Changes.Count} of them changed by the profile since the last launch" : "") +
+                        (result.Missing > 0 ? $", {result.Missing} not in their cfg file yet" : "") +
+                        (result.ToBindrune > 0 ? $", {result.ToBindrune} keybind(s) left for Bindrune to take over." : "."));
         }
     }
 }

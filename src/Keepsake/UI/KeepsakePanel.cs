@@ -9,6 +9,10 @@ namespace Keepsake.UI
     public enum Source
     {
         Kept,
+
+        /// <summary>Kept settings whose profile's value changed since the last launch. Offered while there are any.</summary>
+        ProfileChanged,
+
         Changed,
         /// <summary>Every setting the search matches. Only offered while searching.</summary>
         All,

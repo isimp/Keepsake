@@ -20,6 +20,12 @@ namespace Keepsake.UI
 
         private static Text _headerTitle;
         private static Text _headerInfo;
+        private static GameObject _keepAllButton;
+
+        /// <summary>What Keep all keeps: the listed changes that can be kept.</summary>
+        private static List<Setting> _keepable = new List<Setting>();
+
+        private const float KeepAllWidth = 150f;
 
         private static VirtualList<SourceItem, SourceView> _sourceList;
         private static VirtualList<SettingItem, SettingView> _settingList;
@@ -111,11 +117,51 @@ namespace Keepsake.UI
             infoRect.pivot = new Vector2(0f, 0f);
             infoRect.offsetMin = new Vector2(12f, 4f);
             infoRect.offsetMax = new Vector2(-12f, 24f);
+
+            _keepAllButton = Button("Keep all", strip.transform, KeepAllWidth, 32f, KeepAll);
+            AnchorRight(_keepAllButton, -10f, -HeaderHeight / 2f);
+            _keepAllButton.SetActive(false);
+        }
+
+        /// <summary>Keeps every change listed that can be kept, each at the value it has now.</summary>
+        private static void KeepAll()
+        {
+            var settings = _keepable.ToList();
+            var kept = 0;
+            Act(() =>
+            {
+                kept = Keeper.PinAll(settings);
+                return kept > 0 ? null : "None of these could be kept.";
+            }, Sfx.Kept, () => $"{Plural(kept, "setting")} kept at {(kept == 1 ? "its value" : "their values")}. A profile sync leaves {(kept == 1 ? "it" : "them")} alone now.");
+        }
+
+        /// <summary>Shows Keep all over a list of changes with something to keep, and makes room for it.</summary>
+        private static void UpdateKeepAll(List<Row> rows)
+        {
+            _keepable = _source == Source.Changed
+                ? rows.Select(r => r.Setting).Where(Keeper.CanPin).ToList()
+                : new List<Setting>();
+
+            var shown = _keepable.Count > 0;
+            if (_keepAllButton != null)
+            {
+                _keepAllButton.SetActive(shown);
+                var label = _keepAllButton.GetComponentInChildren<Text>();
+                if (label != null) label.text = $"Keep all ({_keepable.Count})";
+            }
+
+            var right = shown ? -(KeepAllWidth + 22f) : -12f;
+            foreach (var text in new[] { _headerTitle, _headerInfo })
+            {
+                var rect = (RectTransform)text.transform;
+                rect.offsetMax = new Vector2(right, rect.offsetMax.y);
+            }
         }
 
         private static void UpdateHeader(List<Row> rows, bool searching)
         {
             if (_headerTitle == null || _headerInfo == null) return;
+            UpdateKeepAll(rows);
 
             var mods = rows.Select(r => r.ModName).Distinct().Count();
             var across = $"{Plural(rows.Count, "setting")} in {Plural(mods, "mod")}";
@@ -139,6 +185,13 @@ namespace Keepsake.UI
                     _headerInfo.text = rows.Count == 0
                         ? "Settings held at your value through profile syncs"
                         : $"{across}, held at your value through profile syncs";
+                    break;
+
+                case Source.ProfileChanged:
+                    _headerTitle.text = "Profile changed";
+                    _headerInfo.text = rows.Count == 0
+                        ? "Kept settings whose profile's value changed since the last launch"
+                        : $"{across} kept at your value, whose profile's value changed since the last launch";
                     break;
 
                 case Source.Changed:
@@ -199,6 +252,7 @@ namespace Keepsake.UI
             }
 
             var kept = Keeper.Pins.Select(RowOf).Where(r => Matches(r, words)).ToList();
+            var profileChanged = Keeper.ProfileChanged().Select(id => RowOf(Keeper.Find(id))).Where(r => Matches(r, words)).ToList();
             var changed = Session.Changed().Select(RowOf).Where(r => Matches(r, words)).ToList();
 
             // A selected mod the search no longer matches would leave an empty middle column with
@@ -206,12 +260,13 @@ namespace Keepsake.UI
             if (_source == Source.Mod && !counts.ContainsKey(_mod ?? "")) _source = searching ? Source.All : Source.Kept;
             if (_source == Source.All && !searching) _source = Source.Kept;
 
-            _sourceList.SetItems(SourceItems(counts, kept.Count, changed.Count, searching), keepPosition: true);
+            _sourceList.SetItems(SourceItems(counts, kept.Count, profileChanged.Count, changed.Count, searching), keepPosition: true);
 
             List<Row> rows;
             switch (_source)
             {
                 case Source.Kept: rows = Sorted(kept); break;
+                case Source.ProfileChanged: rows = Sorted(profileChanged); break;
                 case Source.Changed: rows = Sorted(changed); break;
                 case Source.Mod: rows = matched.Where(s => s.ModName == _mod).Select(RowOf).ToList(); break;
                 default: rows = matched.Select(RowOf).ToList(); break;
@@ -225,6 +280,7 @@ namespace Keepsake.UI
                 _emptyMessage.GetComponent<Text>().text =
                     searching ? "Nothing here matches the search." :
                     _source == Source.Kept ? "Nothing is kept yet. Pick a mod on the left, or search, then select a setting and keep it." :
+                    _source == Source.ProfileChanged ? "Every change the profile made has been looked at. Your values stay kept." :
                     _source == Source.Changed ? "No setting has changed since the game started. Settings you change in a config manager show up here." :
                     "This mod has no settings.";
 
@@ -237,15 +293,18 @@ namespace Keepsake.UI
             }
         }
 
-        private static List<SourceItem> SourceItems(Dictionary<string, int> counts, int kept, int changed, bool searching)
+        private static List<SourceItem> SourceItems(Dictionary<string, int> counts, int kept, int profileChanged, int changed, bool searching)
         {
             var keptMods = new HashSet<string>(Keeper.Pins.Select(p => SettingIndex.Find(p.Id)?.ModName).Where(m => m != null));
 
-            var items = new List<SourceItem>
-            {
-                new SourceItem { Text = "Kept", Source = Source.Kept, Count = kept, HasKept = true },
-                new SourceItem { Text = "Changed this session", Source = Source.Changed, Count = changed },
-            };
+            var items = new List<SourceItem> { new SourceItem { Text = "Kept", Source = Source.Kept, Count = kept, HasKept = true } };
+
+            // Only there while the profile changed something, and while you are looking at it, so
+            // answering the last one does not pull the list from under you.
+            if (profileChanged > 0 || _source == Source.ProfileChanged)
+                items.Add(new SourceItem { Text = "Profile changed", Source = Source.ProfileChanged, Count = profileChanged, HasKept = true });
+
+            items.Add(new SourceItem { Text = "Changed this session", Source = Source.Changed, Count = changed });
             if (searching)
                 items.Add(new SourceItem { Text = "All matches", Source = Source.All, Count = counts.Values.Sum() });
 
@@ -463,7 +522,7 @@ namespace Keepsake.UI
             view.Value.color = differs || kept ? Color.white : Dim;
 
             view.Tag.text = row.Setting == null ? "not loaded"
-                : kept ? (row.Setting.LeftToBindrune ? "waiting" : "kept")
+                : kept ? (row.Setting.LeftToBindrune ? "waiting" : Keeper.ProfileChangeOf(row.Id) != null ? "updated" : "kept")
                 : Session.IsChanged(row.Setting) ? "changed" : "";
             view.Tag.color = kept ? Kept : Dim;
         }

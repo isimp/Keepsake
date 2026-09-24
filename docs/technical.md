@@ -8,9 +8,11 @@ A profile sync in a mod manager such as Gale uploads everything under `BepInEx/c
 
 Keepsake has two parts.
 
-`Keepsake.Preloader.dll` is a BepInEx preloader patcher. It patches nothing: BepInEx calls `Initialize` on every patcher before any plugin loads, and that is all it uses. It reads `BepInEx/keepsake.pins` and writes each kept value into its mod's cfg file, replacing only that one line and leaving comments, order and line endings as they were. The file is written aside and swapped in, so an interrupted write leaves the old file. Because this happens before any plugin exists, a mod reads your value from its own file whether it reads the setting once in `Awake` or every frame. The order in which BepInEx loads plugins follows their dependencies and is otherwise not something one plugin controls, which is why this is a patcher rather than part of the plugin.
+`Keepsake.Preloader.dll` is a BepInEx preloader patcher. It patches nothing: BepInEx calls `Initialize` on every patcher before any plugin loads, and that is all it uses. It reads `BepInEx/keepsake.pins` and writes each kept value into its mod's cfg file, replacing only that one line and leaving comments, order and line endings as they were. The file is written aside and swapped in, so an interrupted write leaves the old file; a copy left aside that way is removed at the next launch, since under `BepInEx/config` a profile owner's sync would upload it. Because this happens before any plugin exists, a mod reads your value from its own file whether it reads the setting once in `Awake` or every frame. The order in which BepInEx loads plugins follows their dependencies and is otherwise not something one plugin controls, which is why this is a patcher rather than part of the plugin.
 
 Whatever value the preloader replaces is recorded as the profile's value. Releasing a setting puts that value back.
+
+When the value it replaces is not the profile's value it recorded last time, the profile changed it since the last launch. The preloader hands those changes to the plugin in memory, through the application domain both run in, and the panel shows them for that session. Nothing about them is written to disk, so `keepsake.pins` keeps its format. A cfg file that holds your value tells nothing about the profile, since it looks the same whether no sync happened or the profile moved to your value, so a profile change to exactly your value is not seen.
 
 `Keepsake.dll` is the plugin. Once every plugin has loaded, it reads the settings of every plugin whose cfg file sits under `BepInEx/config`, puts in any kept value the preloader could not place because the file or the line did not exist yet, and subscribes to each file's `SettingChanged`. A second pass runs shortly after a character first spawns if some kept settings were still missing, since some mods bind settings only when a world loads, and opening the panel runs it again.
 
@@ -49,7 +51,9 @@ The left column lists your kept settings, the settings changed since the game st
 
 Both lists create rows only for what is on screen and reuse them while scrolling, so the number of settings does not affect how fast the panel draws. Settings changed while the panel is open redraw it at most twice a second.
 
-A setting counts as changed this session when it differs from the value it had when Keepsake first saw it. Changes Keepsake makes itself do not count.
+A setting counts as changed this session when it differs from the value it had when Keepsake first saw it. Changes Keepsake makes itself do not count. Keep all, over that list, keeps every setting in it that is not kept yet, each at its current value and with its value at launch as the profile's, in one write.
+
+Profile changed, on the left while there are any, lists the kept settings whose profile's value changed since the last launch. Each one stays there until you take the profile's value (the setting stays kept, at that value), stay with yours, give it another value, or release it.
 
 ## Files
 
@@ -69,7 +73,7 @@ The preloader also runs on a dedicated server if installed there, and does nothi
 
 ## Tests
 
-`tests/Keepsake.Tests` covers what needs no game: the pins file, the cfg text the preloader rewrites, and both files shared with Bindrune, checked against the samples in `tests/contract`. The tests run on .NET 8 against the real `BepInEx.dll` of a local profile, which is not part of the repository, so they run locally rather than on the build server:
+`tests/Keepsake.Tests` covers what needs no game: the pins file, the cfg text the preloader rewrites, both files shared with Bindrune, checked against the samples in `tests/contract`, the preloader's pass over a temporary profile, and keeping, releasing, setting and following values on real BepInEx settings. The plugin class needs the game, so the tests stand in for it with `PluginShim.cs`, and hand their own settings to `SettingIndex` in place of the loaded plugins. The tests run on .NET 8 against the real `BepInEx.dll` of a local profile, which is not part of the repository, so they run locally rather than on the build server:
 
 ```
 dotnet test tests/Keepsake.Tests
@@ -77,7 +81,7 @@ dotnet test tests/Keepsake.Tests
 
 `.githooks/pre-push` runs them before every push and stops the push when one fails; without a local `BepInEx.dll` it lets the push through with a warning. Git uses it once told to, per clone: `git config core.hooksPath .githooks`.
 
-The parts that touch the running game (writing a live setting, telling whether Bindrune is loaded, the panel) are not covered and are checked in game.
+The parts that touch the running game (telling whether Bindrune is loaded, keybinds while it is, the panel) are not covered and are checked in game.
 
 ## Building
 

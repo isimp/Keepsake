@@ -2,7 +2,7 @@
 
 Keep your own value for any mod setting on a shared profile. When a profile sync would put the profile's value back, Keepsake puts yours in again before any mod has read it, so even settings a mod only reads at startup keep your value.
 
-Press Home to open the panel. Pick a mod on the left or search by mod, setting or description, select a setting and press Keep. A kept setting can be given a new value right there or in any config manager, and Keepsake follows along. Release hands it back to the profile and puts the profile's value back. The panel also lists every setting that changed since the game started, so something you just tried out in a config manager is one click away from being kept.
+Press Home to open the panel. Pick a mod on the left or search by mod, setting or description, select a setting and press Keep. A kept setting can be given a new value right there or in any config manager, and Keepsake follows along. Release hands it back to the profile and puts the profile's value back. The panel also lists every setting that changed since the game started, so something you just tried out in a config manager is one click away from being kept, or all of them at once with Keep all. When the profile changes a value you keep, the panel shows it under Profile changed, and you can take the profile's new value or stay with yours.
 
 Settings a server hands out while you are connected to it still follow the server, and your value is back when you leave. Keepsake runs on your own machine only, and servers do not need it. It needs Jotunn.
 

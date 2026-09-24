@@ -129,15 +129,43 @@ namespace Keepsake
         public static string FileOf(ConfigFile config) =>
             config != null && Files.TryGetValue(config, out var file) ? file : null;
 
+        /// <summary>A loaded plugin's settings and what names it.</summary>
+        internal sealed class LoadedConfig
+        {
+            public ConfigFile Config;
+            public string Name;
+            public string Version;
+            public string Guid;
+        }
+
+        /// <summary>Where the settings come from: every loaded plugin. The tests hand in their own, having no plugins.</summary>
+        internal static Func<IEnumerable<LoadedConfig>> Sources = Loaded;
+
+        private static IEnumerable<LoadedConfig> Loaded()
+        {
+            foreach (var info in Chainloader.PluginInfos.Values.ToList())
+            {
+                var config = info?.Instance?.Config;
+                if (config == null) continue;
+
+                yield return new LoadedConfig
+                {
+                    Config = config,
+                    Name = info.Metadata?.Name,
+                    Version = info.Metadata?.Version?.ToString(),
+                    Guid = info.Metadata?.GUID,
+                };
+            }
+        }
+
         public static void Refresh()
         {
             var all = new List<Setting>();
             ById.Clear();
 
-            foreach (var info in Chainloader.PluginInfos.Values.ToList())
+            foreach (var source in Sources())
             {
-                var config = info?.Instance?.Config;
-                if (config == null) continue;
+                var config = source.Config;
 
                 if (!Files.TryGetValue(config, out var file))
                 {
@@ -147,7 +175,7 @@ namespace Keepsake
                 }
                 if (file == null) continue;
 
-                var modName = info.Metadata?.Name ?? file;
+                var modName = source.Name ?? file;
 
                 KeyValuePair<ConfigDefinition, ConfigEntryBase>[] entries;
                 try
@@ -173,8 +201,8 @@ namespace Keepsake
                             Entry = entry,
                             File = file,
                             ModName = modName,
-                            ModVersion = info.Metadata?.Version?.ToString() ?? "",
-                            ModGuid = info.Metadata?.GUID ?? "",
+                            ModVersion = source.Version ?? "",
+                            ModGuid = source.Guid ?? "",
                             Id = PinFile.IdOf(file, entry.Definition.Section, entry.Definition.Key),
                             Server = ServerOf(entry),
                         };
@@ -212,6 +240,18 @@ namespace Keepsake
         }
 
         private static Dictionary<string, ModInfo> _mods = new Dictionary<string, ModInfo>();
+
+        /// <summary>Forgets everything, as at launch. For the tests.</summary>
+        internal static void Reset()
+        {
+            Sources = Loaded;
+            ById.Clear();
+            ByEntry.Clear();
+            Files.Clear();
+            All = new List<Setting>();
+            Mods = new List<string>();
+            _mods = new Dictionary<string, ModInfo>();
+        }
 
         /// <summary>A mod by name, as the header over its settings describes it, or null.</summary>
         public static ModInfo Mod(string name) => name != null && _mods.TryGetValue(name, out var info) ? info : null;

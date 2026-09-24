@@ -112,6 +112,9 @@ namespace Keepsake.UI
                 return;
             }
 
+            var change = Keeper.ProfileChangeOf(pin.Id);
+            if (change != null) ProfileChangeNotice(setting, pin, change);
+
             Wrapped("Your value", _detail, DetailInner, 13, Kept);
             ValueEditor(setting);
             Spacer(4f);
@@ -132,6 +135,28 @@ namespace Keepsake.UI
 
             Wrapped("Release hands the setting back to the profile and puts the profile's value back.",
                 _detail, DetailInner, 13, Dim);
+        }
+
+        /// <summary>
+        /// The profile's value moved since the last launch while yours stayed in place. Shown until
+        /// you take the profile's, stay with yours, or give the setting another value.
+        /// </summary>
+        private static void ProfileChangeNotice(Setting setting, Pin pin, ProfileChange change)
+        {
+            Wrapped($"Since the last launch, the profile changed this from {KeyLabels.Shown(setting, change.From)} to " +
+                    $"{KeyLabels.Shown(setting, change.To)}. Your value stays in place until you choose.",
+                _detail, DetailInner, 15, Kept);
+
+            var row = ButtonRow();
+            FixedButton("Use the profile's", row, 180f, 34f, () => Act(() => Keeper.UseProfiles(setting), Sfx.ValueSet,
+                () => $"{setting.Key} is kept at the profile's value, {KeyLabels.Shown(setting, setting.Current)}."));
+            FixedButton("Keep mine", row, 150f, 34f, () => Act(() =>
+            {
+                Keeper.KeepMine(pin.Id);
+                return null;
+            }, Sfx.Kept, () => $"{setting.Key} stays at your value, {KeyLabels.Shown(setting, pin.Value)}."));
+
+            Spacer(8f);
         }
 
         /// <summary>

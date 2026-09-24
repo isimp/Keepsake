@@ -163,13 +163,16 @@ namespace Keepsake
             return lines.ToArray();
         }
 
+        /// <summary>Added to a file's name while it is written aside.</summary>
+        public const string TempSuffix = ".keepsake.tmp";
+
         /// <summary>
         /// Writes a text file aside and swaps it in, so a crash mid-write leaves the old file
         /// rather than half of the new one. UTF-8 without a byte order mark, as BepInEx writes.
         /// </summary>
         public static void ReplaceText(string path, string text)
         {
-            var temp = path + ".keepsake.tmp";
+            var temp = path + TempSuffix;
             System.IO.File.WriteAllText(temp, text, new UTF8Encoding(false));
 
             if (System.IO.File.Exists(path)) System.IO.File.Replace(temp, path, null);

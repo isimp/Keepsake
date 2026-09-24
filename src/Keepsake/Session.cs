@@ -32,5 +32,12 @@ namespace Keepsake
 
         public static List<Setting> Changed() =>
             Touched.Select(SettingIndex.Find).Where(s => s != null && IsChanged(s)).ToList();
+
+        /// <summary>Forgets everything, as at launch. For the tests.</summary>
+        internal static void Reset()
+        {
+            Initial.Clear();
+            Touched.Clear();
+        }
     }
 }

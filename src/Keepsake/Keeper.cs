@@ -74,6 +74,37 @@ namespace Keepsake
         public static string Pin(Setting setting)
         {
             Sync();
+            var problem = Add(setting);
+            if (problem == null) Save();
+            return problem;
+        }
+
+        /// <summary>
+        /// Keeps every one of these settings at the value it has now, in one write. Those already
+        /// kept, and those that cannot be, are passed over. Returns how many were kept.
+        /// </summary>
+        public static int PinAll(IEnumerable<Setting> settings)
+        {
+            Sync();
+
+            var kept = 0;
+            foreach (var setting in settings)
+                if (Find(setting.Id) == null && Add(setting) == null) kept++;
+
+            if (kept > 0) Save();
+            return kept;
+        }
+
+        /// <summary>Whether Keep would take the setting: loaded, not kept, not Bindrune's, and storable.</summary>
+        public static bool CanPin(Setting setting)
+        {
+            if (setting == null || Find(setting.Id) != null || setting.LeftToBindrune) return false;
+            return PinFile.Storable(setting.Current);
+        }
+
+        /// <summary>Adds a pin in memory, leaving the saving to the caller. Returns why not, or null.</summary>
+        private static string Add(Setting setting)
+        {
             if (Find(setting.Id) != null) return null;
             if (setting.LeftToBindrune) return BindruneKeepsKeys;
 
@@ -82,16 +113,16 @@ namespace Keepsake
             if (!PinFile.Storable(value)) return "this value has line breaks or tabs in it, which Keepsake cannot store";
 
             var profile = ProfileOf(setting);
-            _pins.Add(new Pin
+            var pin = new Pin
             {
                 File = setting.File,
                 Section = setting.Section,
                 Key = setting.Key,
                 Value = value,
                 Profile = profile != null && PinFile.Storable(profile) ? profile : value,
-            });
-
-            Save();
+            };
+            _pins.Add(pin);
+            _byId[pin.Id] = pin;
             return null;
         }
 
@@ -127,6 +158,7 @@ namespace Keepsake
             _pins.Remove(pin);
             Save();
             if (pin.Profile != null) Released[id] = pin.Profile;
+            Changes.Remove(id);
 
             // A keybind Bindrune looks after is its to set, so releasing one only lets go of it.
             var setting = SettingIndex.Find(id);
@@ -163,8 +195,51 @@ namespace Keepsake
 
             pin.Value = now;
             Save();
+
+            // Choosing a value here is an answer to a profile change as much as Keep mine is.
+            Changes.Remove(setting.Id);
             return null;
         }
+
+        // ---------- the profile's changes ----------
+
+        private static Dictionary<string, ProfileChange> _changes;
+
+        /// <summary>
+        /// Kept settings whose profile's value changed since the last launch, by id: found by the
+        /// preloader, or by Reconcile for a value it had to put in later. For this session only.
+        /// </summary>
+        private static Dictionary<string, ProfileChange> Changes
+        {
+            get
+            {
+                if (_changes != null) return _changes;
+                _changes = new Dictionary<string, ProfileChange>();
+                foreach (var change in ProfileChanges.Take()) _changes[change.Id] = change;
+                return _changes;
+            }
+        }
+
+        /// <summary>What the profile changed about a kept setting since the last launch, or null.</summary>
+        public static ProfileChange ProfileChangeOf(string id)
+        {
+            if (id == null || Find(id) == null) return null;
+            return Changes.TryGetValue(id, out var change) ? change : null;
+        }
+
+        /// <summary>The ids of kept settings whose profile's value changed since the last launch.</summary>
+        public static List<string> ProfileChanged() => Changes.Keys.Where(id => Find(id) != null).ToList();
+
+        /// <summary>Takes the profile's new value as yours, and the setting stays kept.</summary>
+        public static string UseProfiles(Setting setting)
+        {
+            var pin = Find(setting.Id);
+            if (pin?.Profile == null) return "the profile's value is not known";
+            return SetValue(setting, pin.Profile);
+        }
+
+        /// <summary>Stays with your value, and the setting no longer shows as changed by the profile.</summary>
+        public static void KeepMine(string id) => Changes.Remove(id);
 
         /// <summary>
         /// Puts every pin back into the settings that are loaded, for pins the preloader could not
@@ -194,7 +269,11 @@ namespace Keepsake
                 if (current == null || current == pin.Value) continue;
 
                 // Whatever the setting holds before your value goes in is the profile's.
-                if (pin.Profile != current) dirty = true;
+                if (pin.Profile != current)
+                {
+                    if (pin.Profile != null) Changes[pin.Id] = new ProfileChange { Id = pin.Id, From = pin.Profile, To = current };
+                    dirty = true;
+                }
                 pin.Profile = current;
 
                 Write(setting, pin.Value);
@@ -361,6 +440,22 @@ namespace Keepsake
 
             PinFile.Write(_pins);
             _stamp = PinFile.Stamp();
+        }
+
+        /// <summary>Forgets everything, as at launch. For the tests, which run many launches in one process.</summary>
+        internal static void Reset()
+        {
+            foreach (var config in Followed) config.SettingChanged -= OnSettingChanged;
+            Followed.Clear();
+            _pins = new List<Pin>();
+            _byId = new Dictionary<string, Pin>();
+            _stamp = null;
+            _loaded = false;
+            _unreadable = false;
+            _keptAtLaunch = null;
+            Released.Clear();
+            _changes = null;
+            Changed = null;
         }
 
         private static void Index()
