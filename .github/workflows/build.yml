@@ -22,6 +22,25 @@ jobs:
       - name: Build
         run: dotnet build Keepsake.sln -c Release -p:LibsDir=lib --nologo
 
+      # Keepsake and Bindrune read a file of each other's, and both repositories hold identical
+      # samples of the two formats in tests/contract. A difference means one side changed a
+      # format without the other. The tests that check each side against the samples run
+      # locally, since they need a BepInEx.dll this repository does not ship.
+      - name: Check the shared contract matches Bindrune's
+        run: |
+          set -euo pipefail
+          for file in keepsake.pins bindrune.keys; do
+            if ! curl -fsSL "https://raw.githubusercontent.com/isimp/Bindrune/main/tests/contract/$file" -o "/tmp/$file"; then
+              echo "::warning::Could not fetch Bindrune's tests/contract/$file, so it was not compared."
+              continue
+            fi
+            if ! diff -u "/tmp/$file" "tests/contract/$file"; then
+              echo "::error::tests/contract/$file differs from Bindrune's copy. Change the format in both mods together."
+              exit 1
+            fi
+          done
+          echo "contract matches"
+
       - uses: actions/upload-artifact@v4
         with:
           name: Keepsake

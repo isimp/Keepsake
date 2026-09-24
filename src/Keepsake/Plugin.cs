@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Runtime.CompilerServices;
 using BepInEx;
 using BepInEx.Configuration;
@@ -96,6 +97,7 @@ namespace Keepsake
             try
             {
                 ReconcileOnce();
+                CheckWaitingOnce();
 
                 if (KeepsakePanel.IsOpen) KeepsakePanel.Tick();
 
@@ -114,6 +116,33 @@ namespace Keepsake
             {
                 WarnOnce($"Keepsake: input check failed: {ex.Message}", ex);
             }
+        }
+
+        private bool _waitingChecked;
+        private float _waitingCheckAt;
+
+        /// <summary>
+        /// Keybinds kept here before Bindrune was installed wait for Bindrune to take them over,
+        /// and nothing keeps them until it does. Bindrune does that when it puts its own keys
+        /// back, at the start menu and again once a world has loaded, so any still waiting a while
+        /// after your character appears were not taken: an older Bindrune, most likely. Said once
+        /// a session in the log, since the panel only shows it to someone who looks.
+        /// </summary>
+        private void CheckWaitingOnce()
+        {
+            if (_waitingChecked || Player.m_localPlayer == null) return;
+
+            if (_waitingCheckAt == 0f) _waitingCheckAt = Time.realtimeSinceStartup + 10f;
+            if (Time.realtimeSinceStartup < _waitingCheckAt) return;
+            _waitingChecked = true;
+
+            if (!SettingIndex.BindruneLoaded) return;
+
+            var waiting = Keeper.Pins.Count(p => SettingIndex.Find(p.Id)?.IsKeybind == true);
+            if (waiting == 0) return;
+
+            Log.LogWarning($"Keepsake: {waiting} kept keybind(s) are waiting for Bindrune to take them over, and nothing " +
+                           "keeps them until it does. Update Bindrune, or set these keys as yours in Bindrune and release them in Keepsake.");
         }
 
         /// <summary>

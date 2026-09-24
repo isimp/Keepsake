@@ -1,0 +1,15 @@
+# bindrune state v3
+# Everything Bindrune remembers that a profile sync must not take away.
+# Kept out of BepInEx/config, with an extension no sync picks up, for that reason.
+
+[keys]
+# bind id, your key, the profile's key, whether yours is live.
+cfg:isimp.Example:Keys:Open	K	H	1
+cfg:isimp.Example:Keys:Shortcut	H + LeftAlt	none	1
+cfg:isimp.Example:Section: with colon:Toggle	F7	F8	0
+cfg:isimp.Example:Keys:Cleared	none	J	1
+
+[muted]
+# Clashes Bindrune should stop flagging: the two bind ids, then what was
+# waved through. A line with no severity mutes the pair whatever it does.
+cfg:isimp.Example:Keys:Open	vanilla:Map	soft	1

@@ -231,27 +231,24 @@ namespace Keepsake
         /// </summary>
         public static List<BindruneKeep> BindruneKeys()
         {
-            var found = new List<BindruneKeep>();
-            if (SettingIndex.BindruneLoaded) return found;
+            if (SettingIndex.BindruneLoaded) return new List<BindruneKeep>();
 
-            var keys = BindruneLink.ReadKeys().Where(k => k.Active).ToList();
-            if (keys.Count == 0) return found;
+            var keys = BindruneLink.ReadKeys();
+            if (keys.Count == 0) return new List<BindruneKeep>();
 
-            var byBindruneId = new Dictionary<string, Setting>();
-            foreach (var setting in SettingIndex.All.Where(s => s.IsKeybind))
-                byBindruneId[$"cfg:{setting.ModGuid}:{setting.Section}:{setting.Key}"] = setting;
+            var slots = SettingIndex.All
+                .Where(s => s.IsKeybind && Find(s.Id) == null)
+                .Select(s => new KeybindSlot<Setting>
+                {
+                    BindruneId = Keepsake.BindruneKeys.IdOf(s.ModGuid, s.Section, s.Key),
+                    IsKeyCode = s.Entry.SettingType == typeof(KeyCode),
+                    Setting = s,
+                });
 
-            foreach (var key in keys)
-            {
-                if (!byBindruneId.TryGetValue(key.Id, out var setting) || Find(setting.Id) != null) continue;
-
-                var yours = AsSetting(key.Yours, setting);
-                if (yours == null || !PinFile.Storable(yours)) continue;
-
-                found.Add(new BindruneKeep { Setting = setting, Yours = yours, Profile = AsSetting(key.Profile, setting) });
-            }
-
-            return found;
+            return Keepsake.BindruneKeys.Match(keys, slots)
+                .Where(m => PinFile.Storable(m.Yours))
+                .Select(m => new BindruneKeep { Setting = m.Setting, Yours = m.Yours, Profile = m.Profile })
+                .ToList();
         }
 
         /// <summary>
@@ -285,29 +282,6 @@ namespace Keepsake
 
             if (taken > 0) Save();
             return taken;
-        }
-
-        /// <summary>
-        /// A key in the form Bindrune stores it, which is how BepInEx writes a KeyboardShortcut,
-        /// in the form the setting stores it. A setting of a single KeyCode takes the main key.
-        /// Null when it cannot be read.
-        /// </summary>
-        private static string AsSetting(string stored, Setting setting)
-        {
-            try
-            {
-                var shortcut = string.IsNullOrEmpty(stored) || stored == "none"
-                    ? KeyboardShortcut.Empty
-                    : KeyboardShortcut.Deserialize(stored);
-
-                return setting.Entry.SettingType == typeof(KeyCode)
-                    ? TomlTypeConverter.ConvertToString(shortcut.MainKey, typeof(KeyCode))
-                    : TomlTypeConverter.ConvertToString(shortcut, typeof(KeyboardShortcut));
-            }
-            catch (Exception)
-            {
-                return null;
-            }
         }
 
         /// <summary>Starts following changes to a cfg file's settings. Handed to SettingIndex.FileFound.</summary>

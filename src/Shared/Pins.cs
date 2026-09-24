@@ -41,7 +41,13 @@ namespace Keepsake
     /// </summary>
     public static class PinFile
     {
-        private const string Version = "# keepsake pins v1";
+        /// <summary>
+        /// The first line of the file. Bindrune reads this file too and checks it, so a change to
+        /// the format means a new version here and in Bindrune. See tests/contract.
+        /// </summary>
+        public const string Version = "# keepsake pins v1";
+
+        private const string VersionPrefix = "# keepsake pins v";
 
         private static readonly string[] Header =
         {
@@ -68,12 +74,10 @@ namespace Keepsake
         /// </summary>
         public static List<Pin> Read()
         {
-            var pins = new List<Pin>();
-
             string[] lines;
             try
             {
-                if (!System.IO.File.Exists(FilePath)) return pins;
+                if (!System.IO.File.Exists(FilePath)) return new List<Pin>();
                 lines = System.IO.File.ReadAllLines(FilePath);
             }
             catch (Exception ex)
@@ -82,15 +86,31 @@ namespace Keepsake
                 return null;
             }
 
+            var pins = Parse(lines);
+            if (pins == null)
+                Log?.LogWarning($"Keepsake: {Path.GetFileName(FilePath)} was written by a newer Keepsake, so it is left as it is.");
+
+            return pins;
+        }
+
+        /// <summary>
+        /// The pins in the lines of a pins file. Null for a file of another version, which this
+        /// one cannot read correctly and must never write over. Lines that do not fit are skipped.
+        /// </summary>
+        public static List<Pin> Parse(IEnumerable<string> lines)
+        {
+            var pins = new List<Pin>();
             var seen = new HashSet<string>();
+
             foreach (var raw in lines)
             {
+                if (raw.StartsWith(VersionPrefix) && raw.Trim() != Version) return null;
                 if (raw.Length == 0 || raw.StartsWith("#")) continue;
 
                 var parts = raw.Split('\t');
                 if (parts.Length < 4)
                 {
-                    Log?.LogWarning($"Keepsake: skipped a line in {Path.GetFileName(FilePath)} that has fewer than four parts: {raw}");
+                    Log?.LogWarning($"Keepsake: skipped a line in keepsake.pins that has fewer than four parts: {raw}");
                     continue;
                 }
 
@@ -119,16 +139,7 @@ namespace Keepsake
         {
             try
             {
-                var lines = new List<string>(Header);
-                lines.AddRange(pins
-                    .OrderBy(p => p.File, StringComparer.OrdinalIgnoreCase)
-                    .ThenBy(p => p.Section, StringComparer.Ordinal)
-                    .ThenBy(p => p.Key, StringComparer.Ordinal)
-                    .Select(p => string.Join("\t", p.Profile == null
-                        ? new[] { p.File, p.Section, p.Key, p.Value }
-                        : new[] { p.File, p.Section, p.Key, p.Value, p.Profile })));
-
-                ReplaceText(FilePath, string.Join(Environment.NewLine, lines.ToArray()) + Environment.NewLine);
+                ReplaceText(FilePath, string.Join(Environment.NewLine, Format(pins)) + Environment.NewLine);
                 return true;
             }
             catch (Exception ex)
@@ -136,6 +147,20 @@ namespace Keepsake
                 Log?.LogError($"Keepsake: could not save {Path.GetFileName(FilePath)}: {ex.Message}");
                 return false;
             }
+        }
+
+        /// <summary>The lines of a pins file holding these pins: the header, then one line each, sorted by mod.</summary>
+        public static string[] Format(IEnumerable<Pin> pins)
+        {
+            var lines = new List<string>(Header);
+            lines.AddRange(pins
+                .OrderBy(p => p.File, StringComparer.OrdinalIgnoreCase)
+                .ThenBy(p => p.Section, StringComparer.Ordinal)
+                .ThenBy(p => p.Key, StringComparer.Ordinal)
+                .Select(p => string.Join("\t", p.Profile == null
+                    ? new[] { p.File, p.Section, p.Key, p.Value }
+                    : new[] { p.File, p.Section, p.Key, p.Value, p.Profile })));
+            return lines.ToArray();
         }
 
         /// <summary>

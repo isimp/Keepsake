@@ -65,23 +65,56 @@ namespace Keepsake
         /// </summary>
         public static List<BindruneKey> ReadKeys()
         {
-            var keys = new List<BindruneKey>();
-
             string[] lines;
             try
             {
-                if (!File.Exists(KeysFile)) return keys;
+                if (!File.Exists(KeysFile)) return new List<BindruneKey>();
                 lines = File.ReadAllLines(KeysFile);
             }
             catch (Exception ex)
             {
                 PinFile.Log?.LogWarning($"Keepsake: could not read {Path.GetFileName(KeysFile)}: {ex.Message}");
-                return keys;
+                return new List<BindruneKey>();
             }
+
+            var keys = ParseKeys(lines);
+            if (keys != null) return keys;
+
+            if (!_warnedVersion)
+            {
+                _warnedVersion = true;
+                PinFile.Log?.LogWarning($"Keepsake: {Path.GetFileName(KeysFile)} is not in a version this Keepsake knows " +
+                                        $"({StateVersion}), so its keys are not offered. Updating Keepsake fixes this.");
+            }
+
+            return new List<BindruneKey>();
+        }
+
+        /// <summary>
+        /// The version line Bindrune writes at the top of bindrune.keys, in the version whose
+        /// layout this reads. Any other is left alone rather than guessed at. See tests/contract.
+        /// </summary>
+        public const string StateVersion = "# bindrune state v3";
+
+        private static bool _warnedVersion;
+
+        /// <summary>The keys in the lines of bindrune.keys, or null when its version line is not StateVersion.</summary>
+        public static List<BindruneKey> ParseKeys(IEnumerable<string> lines)
+        {
+            var keys = new List<BindruneKey>();
+            var versionSeen = false;
 
             var inKeys = false;
             foreach (var raw in lines)
             {
+                if (!versionSeen)
+                {
+                    if (raw.Trim().Length == 0) continue;
+                    if (raw.Trim() != StateVersion) return null;
+                    versionSeen = true;
+                    continue;
+                }
+
                 var line = raw.Trim();
                 if (line.StartsWith("[") && line.EndsWith("]"))
                 {

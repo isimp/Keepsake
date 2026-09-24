@@ -1,0 +1,23 @@
+#!/bin/sh
+# Runs Keepsake's tests before anything is pushed, and stops the push when one fails.
+#
+# The tests need BepInEx.dll from a local BepInEx profile, which is not in the repository. Where
+# there is none, the push goes ahead with a warning. KEEPSAKE_PROFILE_DIR points at another
+# profile than the default Gale one.
+#
+# Git runs hooks only from a folder it is told about, once per clone:
+#   git config core.hooksPath .githooks
+
+profile="${KEEPSAKE_PROFILE_DIR:-$APPDATA/com.kesomannen.gale/valheim/profiles/Default}"
+
+if [ ! -f "$profile/BepInEx/core/BepInEx.dll" ]; then
+    echo "pre-push: tests skipped, there is no BepInEx.dll under $profile" >&2
+    exit 0
+fi
+
+root="$(git rev-parse --show-toplevel)"
+
+if ! dotnet test "$root/tests/Keepsake.Tests" -p:ProfileDir="$profile" --nologo --verbosity quiet; then
+    echo "pre-push: tests failed, so nothing was pushed" >&2
+    exit 1
+fi

@@ -1,0 +1,36 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Tests for the parts of Keepsake that need no game: the pins file, the cfg text, and the
+       files it shares with Bindrune (see tests/contract). They run on .NET 8 against the real
+       BepInEx.dll from the local profile, which is not committed, together with the metadata-only
+       Unity assemblies in lib/: the tests only use enums from those, which the stubs keep whole.
+       Run with: dotnet test tests/Keepsake.Tests
+       Not part of Keepsake.sln, so the build server, which has no BepInEx.dll, never builds it. -->
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+    <RootNamespace>Keepsake.Tests</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="../../src/Keepsake/BindruneKeys.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
+    <PackageReference Include="xunit" Version="2.9.2" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Reference Include="BepInEx"><HintPath>$(BepInExDir)/core/BepInEx.dll</HintPath></Reference>
+    <Reference Include="UnityEngine"><HintPath>$(MSBuildThisFileDirectory)../../lib/UnityEngine.dll</HintPath></Reference>
+    <Reference Include="UnityEngine.CoreModule"><HintPath>$(MSBuildThisFileDirectory)../../lib/UnityEngine.CoreModule.dll</HintPath></Reference>
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="../contract/*" LinkBase="contract" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>

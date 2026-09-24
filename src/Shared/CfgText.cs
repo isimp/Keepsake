@@ -25,6 +25,12 @@ namespace Keepsake
 
         public static CfgText Load(string path) => new CfgText(File.ReadAllText(path));
 
+        /// <summary>A cfg file from text already in hand.</summary>
+        public static CfgText Parse(string text) => new CfgText(text);
+
+        /// <summary>The file as it would be saved.</summary>
+        public string Text => string.Join(_newline, _lines);
+
         public bool Changed => _changed;
 
         /// <summary>The value the file holds for a setting, or false when it has no such line.</summary>
@@ -66,7 +72,7 @@ namespace Keepsake
         }
 
         /// <summary>Writes the file back, swapped in whole so a crash cannot leave half a file.</summary>
-        public void Save(string path) => PinFile.ReplaceText(path, string.Join(_newline, _lines));
+        public void Save(string path) => PinFile.ReplaceText(path, Text);
 
         private int Find(string section, string key, out string value)
         {

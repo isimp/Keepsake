@@ -1,0 +1,9 @@
+# keepsake pins v1
+# Settings Keepsake keeps at your own value. Tab separated: the cfg file in
+# BepInEx/config, the section, the setting, your value, then the profile's value.
+# The profile's value may be left off; it is filled in on the next launch.
+isimp.Example.cfg	General	Enabled	false	true
+isimp.Example.cfg	Keys	Open	K	H
+isimp.Example.cfg	Keys	Shortcut	H + LeftAlt	None
+isimp.Example.cfg	Section: with colon	Toggle	F7
+sub/Other.cfg	General	Speed	1.5	1
