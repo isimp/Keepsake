@@ -459,7 +459,7 @@ namespace Keepsake.UI
             view.Key.font = GUIManager.Instance.AveriaSerif;
             view.Key.color = kept ? Kept : Color.white;
 
-            view.Value.text = current ?? "";
+            view.Value.text = KeyLabels.Shown(row.Setting, current) ?? "";
             view.Value.color = differs || kept ? Color.white : Dim;
 
             view.Tag.text = row.Setting == null ? "not loaded"

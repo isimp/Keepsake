@@ -63,7 +63,7 @@ namespace Keepsake.UI
         /// <summary>The setting's default, what it accepts, and what may override it.</summary>
         private static void Facts(Setting setting)
         {
-            if (setting.Default != null) Fact("Default", setting.Default);
+            if (setting.Default != null) Fact("Default", KeyLabels.Shown(setting, setting.Default));
 
             var range = RangeOf(setting.Entry);
             if (range != null) Fact("Allowed", range);
@@ -73,7 +73,7 @@ namespace Keepsake.UI
                 Fact("Choices", choices.Length <= 20 ? string.Join(", ", choices) : $"one of {choices.Length} values");
 
             var initial = Session.InitialOf(setting.Id);
-            if (Session.IsChanged(setting) && initial != null) Fact("At launch", initial);
+            if (Session.IsChanged(setting) && initial != null) Fact("At launch", KeyLabels.Shown(setting, initial));
 
             if (setting.Server != ServerControl.None)
                 Wrapped("While you are on a server that runs this mod, the server's value is used. Yours applies " +
@@ -86,7 +86,7 @@ namespace Keepsake.UI
         private static void UnkeptControls(Setting setting)
         {
             Wrapped("Value now", _detail, DetailInner, 13, Dim);
-            Wrapped(setting.Current ?? "", _detail, DetailInner, 19, Color.white, true);
+            Wrapped(KeyLabels.Shown(setting, setting.Current) ?? "", _detail, DetailInner, 19, Color.white, true);
             Spacer(6f);
 
             if (setting.LeftToBindrune)
@@ -98,7 +98,7 @@ namespace Keepsake.UI
 
             var row = ButtonRow();
             FixedButton("Keep", row, 150f, 34f, () => Act(() => Keeper.Pin(setting), Sfx.Kept,
-                () => $"{setting.Key} is kept at {setting.Current}. A profile sync leaves it alone now."));
+                () => $"{setting.Key} is kept at {KeyLabels.Shown(setting, setting.Current)}. A profile sync leaves it alone now."));
 
             Wrapped("Keeping a setting holds it at its value through profile syncs. Once kept, its value " +
                     "can be changed here or in any config manager.", _detail, DetailInner, 13, Dim);
@@ -117,7 +117,7 @@ namespace Keepsake.UI
             Spacer(4f);
 
             if (pin.Profile != null)
-                Fact("Profile's value", pin.Profile + (pin.Profile == pin.Value ? "  (the same)" : ""));
+                Fact("Profile's value", KeyLabels.Shown(setting, pin.Profile) + (pin.Profile == pin.Value ? "  (the same)" : ""));
 
             Spacer(6f);
             var row = ButtonRow();
@@ -125,7 +125,7 @@ namespace Keepsake.UI
             {
                 Keeper.Unpin(pin.Id);
                 return null;
-            }, Sfx.Released, () => $"{setting.Key} follows the profile again" + (pin.Profile != null ? $", at {pin.Profile}." : ".")));
+            }, Sfx.Released, () => $"{setting.Key} follows the profile again" + (pin.Profile != null ? $", at {KeyLabels.Shown(setting, pin.Profile)}." : ".")));
 
             if (setting.Default != null && setting.Current != setting.Default)
                 FixedButton("Use default", row, 150f, 34f, () => Set(setting, setting.Default));
@@ -141,7 +141,7 @@ namespace Keepsake.UI
         private static void WaitingForBindrune(Setting setting, Pin pin)
         {
             Wrapped("Your key", _detail, DetailInner, 13, Kept);
-            Wrapped(pin.Value, _detail, DetailInner, 19, Color.white, true);
+            Wrapped(KeyLabels.Shown(setting, pin.Value), _detail, DetailInner, 19, Color.white, true);
             Spacer(6f);
             Wrapped("Bindrune keeps your keybinds, and takes this one over as yours the next time it puts " +
                     "its keys back. Keepsake no longer writes it. If this stays here, the installed " +
@@ -173,7 +173,7 @@ namespace Keepsake.UI
                 _detail, DetailInner, 15, Color.white);
 
             foreach (var keep in keys.Take(8))
-                Wrapped($"{keep.Setting.ModName} / {keep.Setting.Key}: {keep.Yours}", _detail, DetailInner, 13, Dim);
+                Wrapped($"{keep.Setting.ModName} / {keep.Setting.Key}: {KeyLabels.Shown(keep.Setting, keep.Yours)}", _detail, DetailInner, 13, Dim);
             if (keys.Count > 8) Wrapped($"and {keys.Count - 8} more", _detail, DetailInner, 13, Dim);
 
             Spacer(6f);
@@ -266,7 +266,7 @@ namespace Keepsake.UI
         private static void KeyEditor(Setting setting, string current)
         {
             var capturing = KeyCapture.IsCapturingFor(setting);
-            Wrapped(capturing ? "press a key..." : current, _detail, DetailInner, 19, capturing ? Kept : Color.white, true);
+            Wrapped(capturing ? "press a key..." : KeyLabels.Shown(setting, current), _detail, DetailInner, 19, capturing ? Kept : Color.white, true);
 
             var row = ButtonRow();
             FixedButton(capturing ? "Cancel" : "Set key", row, 150f, 34f, () =>
@@ -337,7 +337,7 @@ namespace Keepsake.UI
         }
 
         private static void Set(Setting setting, string value) =>
-            Act(() => Keeper.SetValue(setting, value), Sfx.ValueSet, () => $"{setting.Key} is kept at {setting.Current}.");
+            Act(() => Keeper.SetValue(setting, value), Sfx.ValueSet, () => $"{setting.Key} is kept at {KeyLabels.Shown(setting, setting.Current)}.");
 
         /// <summary>
         /// Runs an action from the detail column, redraws, then says what happened or why not. The
