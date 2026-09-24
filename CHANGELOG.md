@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.4.2
+
+Kept files now hold through modpack installs and updates in any mod manager. Mod managers give the files they extract the time stored in the zip, which made a modpack's file look older than your own, so it was taken as yours; after a game Keepsake saw close, any change is now put back, whatever time the file carries.
+
+The README lists which ways of updating a profile keep what you kept, and how to carry it over to a profile imported as new.
+
 ## 0.4.1
 
 Kept files are copied as the game closes instead of every ten seconds. At launch, a kept file that differs from its copy is judged by when it was written. Written during the last game, it is yours and its copy is updated. Written after the game closed, a profile sync replaced it and your copy goes back. Before, an outdated copy could be put back over a newer file after a crash, after a game in which Keepsake did not load, or when Keepsake was turned back on after a while.

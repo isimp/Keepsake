@@ -287,13 +287,18 @@ namespace Keepsake
         /// <summary>
         /// The launch's look at every kept file that has a copy, before any mod reads one.
         ///
-        /// A profile sync changes files while the game is closed, a mod while it runs. So a file
-        /// that differs from its copy is told by when it was written: before the last game ended,
-        /// and it is yours, a mod's own writing, and the copy is brought up to date from it; after,
-        /// and a sync replaced it, and your copy goes back. When the game ended is known for sure
-        /// only when Keepsake saw it close. Otherwise the end of the game's log stands in, and a
-        /// file written after that is left as it is, waiting for you to choose, since a mod
-        /// writing late in a crash and a sync after it look the same.
+        /// A profile sync or a mod manager changes files while the game is closed, a mod while it
+        /// runs. After a game Keepsake saw close, every kept file was copied on the way out, so a
+        /// file that differs from its copy changed since, and your copy goes back, whatever time
+        /// the file carries: mod managers that extract from a zip give files the zip's time, which
+        /// is often long past. Only a file written after that close and before the game's log
+        /// ended is the game's own, from a mod saving on the way out, and its copy is brought up
+        /// to date from it.
+        ///
+        /// After any other game, a crash or one without Keepsake, the file's time is all there is
+        /// to go on, against the end of the game's log: written before it, the file is yours and
+        /// the copy is brought up to date; written after, it is left as it is, waiting for you to
+        /// choose, since a mod writing late in a crash and a sync after it look the same.
         ///
         /// A file that is missing is put back either way. Files the kept folders hold that have no
         /// copy, such as ones a sync brought, are left as they are.
@@ -302,6 +307,10 @@ namespace Keepsake
         public static SettleResult Settle(IEnumerable<KeptPath> kept, SessionState state, DateTime? logEnd)
         {
             var result = new SettleResult { Clean = ClosedCleanly(state, logEnd) };
+
+            // The window in which a write is the game's own: after a clean close, from the close to
+            // the end of the log, when mods may still be saving; otherwise up to the log's end.
+            var from = result.Clean ? state.Closed : null;
             var end = result.Clean ? Later(state.Closed, logEnd) : logEnd;
             var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
@@ -323,7 +332,7 @@ namespace Keepsake
                     seen.Add(path);
                     try
                     {
-                        SettleOne(path, state, end, result);
+                        SettleOne(path, state, from, end, result);
                     }
                     catch (Exception ex)
                     {
@@ -337,7 +346,8 @@ namespace Keepsake
             return result;
         }
 
-        private static void SettleOne(string path, SessionState state, DateTime? end, SettleResult result)
+        /// <param name="from">After a clean close, the close: writes from then to end are the game's. Otherwise null, and every write up to end is.</param>
+        private static void SettleOne(string path, SessionState state, DateTime? from, DateTime? end, SettleResult result)
         {
             var live = Live(path);
             var copy = Copy(path);
@@ -368,7 +378,7 @@ namespace Keepsake
             if (!Differ(copy, live)) return;
 
             var written = File.GetLastWriteTimeUtc(live);
-            if (end != null && written <= end)
+            if (end != null && written <= end && (from == null || written > from))
             {
                 CopyOver(live, copy);
                 result.Updated++;
@@ -378,7 +388,8 @@ namespace Keepsake
             {
                 CopyOver(copy, live);
                 result.PutBack++;
-                PinFile.Log?.LogInfo($"Keepsake: put back your copy of {path}, which changed after the game closed.");
+                PinFile.Log?.LogInfo($"Keepsake: put back your copy of {path}, which changed after the game closed" +
+                                     (written <= from ? ", though it carries an older time, as mod managers give files they extract." : "."));
             }
             else
             {

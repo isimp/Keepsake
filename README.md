@@ -4,6 +4,10 @@ Keep your own value for any mod setting on a shared profile. When a profile sync
 
 ![The Keepsake panel](https://raw.githubusercontent.com/isimp/Keepsake/main/docs/images/screenshot.webp)
 
+## AI notice
+
+Most of Keepsake was written by Claude Code (Anthropic), which did the heavy lifting on implementation and design. Heads-up so you can judge for yourself.
+
 ## Getting started
 
 Press Home to open the panel. Pick a mod on the left or search, select a setting and press Keep. You can change a kept value right there or in any config manager, and Keepsake follows along. Release hands the setting back to the profile.
@@ -24,9 +28,16 @@ If you are the one sharing the profile, what you keep goes out to everyone who f
 
 Keybinds are left to Bindrune when it is installed, which keeps them the same way and shows every keybind of the game and your mods in one panel. Bindrune is on Thunderstore at https://thunderstore.io/c/valheim/p/isimp/Bindrune/ and on Hexium at https://valheim.hexium.gg/mods/isimp/Bindrune
 
-## AI notice
+## Profile updates
 
-Most of Keepsake was written by Claude Code (Anthropic), which did the heavy lifting on implementation and design. Heads-up so you can judge for yourself.
+| Update | Kept settings | Kept files |
+|---|---|---|
+| Gale profile sync, or a Gale import into the same profile | Yes | Yes |
+| Installing or updating a modpack, in any mod manager | Yes | Yes, when the game last closed normally |
+| Thunderstore Mod Manager or r2modman, Update existing profile | No | No |
+| Importing as a new profile, in any mod manager | Carried over by hand | Carried over by hand |
+
+Update existing profile in Thunderstore Mod Manager and r2modman replaces the whole profile folder, so what you kept is gone with it. A profile imported as new starts with nothing kept; to bring it along, copy keepsake.pins, keepsake.files, keepsake.changes and the keepsake-files folder from the old profile's BepInEx folder into the new one's.
 
 ## Settings
 

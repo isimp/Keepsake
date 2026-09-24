@@ -176,6 +176,42 @@ namespace Keepsake.Tests
             Assert.Equal("late", CopyOf(Solo));
         }
 
+        [Theory]
+        [InlineData("2026-08-01T09:00:00Z")] // the pack's author last changed the file weeks ago
+        [InlineData("2024-01-01T00:00:00Z")] // the fixed time Thunderstore Mod Manager's exports give every file
+        [InlineData("1980-01-01T00:00:00Z")] // a zip written without times
+        public void AModpackFileWithAnOldTimeAfterACleanCloseIsPutBack(string stamped)
+        {
+            using var profile = new TestProfile();
+            var file = Write(profile, Solo, "spring", Earlier.AddHours(1));
+            FileKeeper.Keep(Timers, isFolder: true);
+            Close(Earlier.AddHours(2));
+
+            // A mod manager extracts the pack's file and gives it the time stored in the zip.
+            Write(profile, Solo, "the pack's", DateTime.Parse(stamped, null, System.Globalization.DateTimeStyles.AdjustToUniversal));
+
+            var result = Launch(Earlier.AddDays(1), logEnd: Earlier.AddHours(2));
+            Assert.True(result.Clean);
+            Assert.Equal(1, result.PutBack);
+            Assert.Equal("spring", File.ReadAllText(file));
+        }
+
+        [Fact]
+        public void AfterACrashAModpackFileWithAnOldTimeIsTakenAsYours()
+        {
+            // The limit of a game Keepsake did not see close: an old time reads as written during it.
+            using var profile = new TestProfile();
+            var file = Write(profile, Solo, "spring");
+            FileKeeper.Keep(Timers, isFolder: true);
+            Launch(Earlier.AddHours(1));
+
+            Write(profile, Solo, "the pack's", Earlier.AddHours(-5));
+
+            var result = Launch(Earlier.AddDays(1), logEnd: Earlier.AddHours(2));
+            Assert.Equal(1, result.Updated);
+            Assert.Equal("the pack's", File.ReadAllText(file));
+        }
+
         [Fact]
         public void AfterACrashWhatTheModWroteBeforeTheLogEndedIsKept()
         {
