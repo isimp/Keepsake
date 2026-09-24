@@ -5,7 +5,7 @@
   <PropertyGroup>
     <TargetFramework>net472</TargetFramework>
     <LangVersion>latest</LangVersion>
-    <Version>0.3.0</Version>
+    <Version>0.4.0</Version>
     <Authors>isimp</Authors>
     <Product>Keepsake</Product>
     <Copyright>Copyright (c) 2026 isimp</Copyright>
