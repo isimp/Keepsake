@@ -10,7 +10,7 @@ The lists tag kept settings as updated, quiet, or same when your value is the pr
 
 Release not loaded, over the kept settings, releases those of mods that are gone.
 
-Launching is faster on large profiles, dragging a config manager's slider no longer rewrites keepsake.pins every frame, and changes made elsewhere no longer close an open dropdown in the panel.
+Launching is faster on large profiles, dragging a config manager's slider no longer rewrites keepsake.pins every frame, changes made elsewhere no longer close an open dropdown in the panel, and the panel reopens with its search and scroll where you left them.
 
 ## 0.2.0
 

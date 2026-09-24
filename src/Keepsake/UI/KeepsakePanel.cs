@@ -173,6 +173,7 @@ namespace Keepsake.UI
 
             if (!quietly) Sfx.Play(Sfx.PanelClose);
             _closedFrame = Time.frameCount;
+            RememberScroll();
             UnityEngine.Object.Destroy(_root);
             GUIManager.BlockInput(false);
             _root = null;
@@ -359,12 +360,27 @@ namespace Keepsake.UI
             _footer.alignment = TextAnchor.MiddleCenter;
 
             BuildResizeGrip();
-            Populate(keepScroll: false);
+
+            // A new window opens where the last one was left.
+            _sourceList.ScrollOffset = _sourceScroll;
+            _settingList.ScrollOffset = _settingScroll;
+            Populate(keepScroll: true);
             _rebindNextFrame = true;
+        }
+
+        // How far both lists were scrolled when their window went away.
+        private static float _sourceScroll;
+        private static float _settingScroll;
+
+        private static void RememberScroll()
+        {
+            if (_sourceList != null) _sourceScroll = _sourceList.ScrollOffset;
+            if (_settingList != null) _settingScroll = _settingList.ScrollOffset;
         }
 
         private static void Rebuild()
         {
+            RememberScroll();
             if (_root != null) UnityEngine.Object.Destroy(_root);
             _root = null;
             Build();
@@ -397,6 +413,11 @@ namespace Keepsake.UI
 
         private static void OnSearchChanged(string text)
         {
+            // Escape in a text field cancels the edit, and the field puts back what it held when
+            // you clicked into it. Escape also closes the panel, so that is not a new search, and
+            // neither is anything the field does once the panel is gone: the search stays as typed.
+            if (_root == null || Input.GetKeyDown(KeyCode.Escape)) return;
+
             var was = _query;
             _query = (text ?? "").Trim();
 
@@ -415,6 +436,9 @@ namespace Keepsake.UI
                     _source = _sourceBeforeSearch;
                     _mod = _modBeforeSearch;
                 }
+
+                // Back to every mod on the left, from the top like the middle list.
+                if (_sourceList != null) _sourceList.ScrollOffset = 0f;
             }
 
             RequestPopulate(reset: true);

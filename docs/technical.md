@@ -47,7 +47,7 @@ One known gap: a Jotunn button that is backed by a setting but bound to a gamepa
 
 ## The panel
 
-The left column lists your kept settings, the settings changed since the game started, and every mod. The middle column lists the chosen place's settings under their sections, with a bar on values that differ from the mod's default, and the right column shows the selected setting's description, default, allowed values and, once kept, its editor. The search runs over mod names, file names, sections, setting names and descriptions.
+The left column lists your kept settings, the settings changed since the game started, and every mod. The middle column lists the chosen place's settings under their sections, with a bar on values that differ from the mod's default, and the right column shows the selected setting's description, default, allowed values and, once kept, its editor. The search runs over mod names, file names, sections, setting names and descriptions. The panel reopens where it was left, with the same place, search, selection and scroll; clearing the search goes back to the place chosen before it, with both lists at the top.
 
 Both lists create rows only for what is on screen and reuse them while scrolling, so the number of settings does not affect how fast the panel draws. Settings changed while the panel is open redraw the lists at most twice a second, and the right column only when the change is to the setting shown there, so an open dropdown stays open. Opening the panel reads every mod's settings again, and sorts them again only when a mod added or dropped one; the first time in a session, the log says how long opening took, apart from the first drawing of the lists, which also creates their rows.
 

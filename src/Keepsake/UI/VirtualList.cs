@@ -64,6 +64,13 @@ namespace Keepsake.UI
             Refresh(true);
         }
 
+        /// <summary>How far the list is scrolled down, for putting it back where it was in a new window.</summary>
+        public float ScrollOffset
+        {
+            get => _content.anchoredPosition.y;
+            set => _content.anchoredPosition = new Vector2(_content.anchoredPosition.x, Mathf.Max(0f, value));
+        }
+
         /// <summary>Gives the rows on screen their items again, after something they show changed.</summary>
         public void Rebind() => Refresh(true);
 
