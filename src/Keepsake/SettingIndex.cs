@@ -243,9 +243,9 @@ namespace Keepsake
         private static void Arrange(List<Setting> all)
         {
             All = all
-                .OrderBy(s => s.ModName, StringComparer.OrdinalIgnoreCase)
-                .ThenBy(s => s.Section, StringComparer.OrdinalIgnoreCase)
-                .ThenBy(s => s.Key, StringComparer.OrdinalIgnoreCase)
+                .OrderBy(s => s.ModName, NaturalOrder.IgnoreCase)
+                .ThenBy(s => s.Section, NaturalOrder.IgnoreCase)
+                .ThenBy(s => s.Key, NaturalOrder.IgnoreCase)
                 .ToList();
             Mods = All.Select(s => s.ModName).Distinct().ToList();
 

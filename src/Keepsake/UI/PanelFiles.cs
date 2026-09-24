@@ -99,11 +99,12 @@ namespace Keepsake.UI
         /// <summary>
         /// The files the filter and the search let through, each under its folder's row, and the
         /// folders whose own path matches. A folder's row stays over any file of it that is listed.
+        /// A file waiting for an answer passes any filter, so an image is not hidden while it waits.
         /// </summary>
         private static List<Row> FileRows(string[] words)
         {
             var items = ConfigItems;
-            var files = new HashSet<ConfigItem>(items.Where(i => !i.IsFolder && FileShows(i) &&
+            var files = new HashSet<ConfigItem>(items.Where(i => !i.IsFolder && (FileShows(i) || FileKeeper.WaitingFor(i.Path) != null) &&
                                                                  (words.Length == 0 || Matches(i.Path.ToLowerInvariant(), words))));
             var parents = new HashSet<string>(files.Select(f => f.Parent), StringComparer.OrdinalIgnoreCase);
 
@@ -188,21 +189,23 @@ namespace Keepsake.UI
             }
             view.Value.color = Dim;
 
-            // Kept with a folder around it reads differently from kept on its own.
-            view.Tag.text = !kept ? "" : string.Equals(by.Path, item.Path, StringComparison.OrdinalIgnoreCase) ? "kept" : "in folder";
-            view.Tag.color = Kept;
+            // Kept with a folder around it reads differently from kept on its own, and a file
+            // waiting for an answer says so first.
+            var waiting = kept && !item.IsFolder && FileKeeper.WaitingFor(item.Path) != null;
+            view.Tag.text = !kept ? "" : waiting ? "waiting" : string.Equals(by.Path, item.Path, StringComparison.OrdinalIgnoreCase) ? "kept" : "in folder";
+            view.Tag.color = waiting ? GUIManager.Instance.ValheimOrange : Kept;
         }
 
         // ---------- the right column ----------
 
-        /// <summary>An image shown in the right column, freed when the column is redrawn or the panel closes.</summary>
-        private static Texture2D _preview;
+        /// <summary>Images shown in the right column, two when a waiting file is compared, freed when the column is redrawn or the panel closes.</summary>
+        private static readonly List<Texture2D> _previews = new List<Texture2D>();
 
         private static void ClearPreview()
         {
-            if (_preview == null) return;
-            UnityEngine.Object.Destroy(_preview);
-            _preview = null;
+            foreach (var texture in _previews)
+                if (texture != null) UnityEngine.Object.Destroy(texture);
+            _previews.Clear();
         }
 
         /// <summary>The right column for a file or folder: what it is, keeping or releasing it, and a look inside.</summary>
@@ -230,10 +233,123 @@ namespace Keepsake.UI
             }
 
             Spacer(10f);
+            var waiting = by != null && !isFolder ? FileKeeper.WaitingFor(path) : null;
+            if (waiting != null) WaitingControls(path, name, waiting);
             FileControls(path, isFolder, name, by, keptItself);
 
-            if (item != null && !isFolder) Preview(path);
+            // A waiting file shows both versions above, the file as it is among them.
+            if (item != null && !isFolder && waiting == null) Preview(path);
         }
+
+        /// <summary>
+        /// A kept file the launch left as it is: it changed after a game Keepsake did not see close,
+        /// so a mod and a profile sync are equally likely to have written it. Shown, across
+        /// launches, until you choose it or your copy.
+        /// </summary>
+        private static void WaitingControls(string path, string name, WaitingFile waiting)
+        {
+            if (waiting.PutBack)
+            {
+                Wrapped("Your copy goes back in at the next launch, before any mod reads the file.", _detail, DetailInner, 15, Kept);
+                Compare(path);
+                Spacer(8f);
+                var back = ButtonRow();
+                FixedButton("Keep this one instead", back, 230f, 34f, () => Act(() => FileKeeper.KeepCurrent(path), Sfx.Kept,
+                    () => $"{name} stays as it is now, and its copy is made from it."));
+                Spacer(8f);
+                return;
+            }
+
+            Wrapped("This file changed after a game Keepsake did not see close, such as after a crash or while Keepsake " +
+                    "was off, so it cannot tell whether a mod or a profile sync changed it. It stays as it is until you choose.",
+                _detail, DetailInner, 15, GUIManager.Instance.ValheimOrange);
+
+            Compare(path);
+            Spacer(8f);
+            var row = ButtonRow();
+            FixedButton("Put my copy back", row, 200f, 34f, () => Act(() => FileKeeper.PutBack(path), Sfx.ValueSet,
+                () => $"Your copy of {name} goes back in at the next launch."));
+            FixedButton("Keep this one", row, 160f, 34f, () => Act(() => FileKeeper.KeepCurrent(path), Sfx.Kept,
+                () => $"{name} stays as it is now, and its copy is made from it."));
+
+            Wrapped("Your copy is the file as it was when the game last closed with Keepsake. It goes back at the next " +
+                    "launch rather than now, since the mod that owns the file may already have read it.",
+                _detail, DetailInner, 13, Dim);
+            Spacer(8f);
+        }
+
+        /// <summary>How tall each of the two viewers is when a waiting file is compared with its copy.</summary>
+        private const float CompareHeight = 170f;
+
+        /// <summary>
+        /// Your copy and the file as it is, one over the other, to choose between: when each was
+        /// written, how large it is, and what it holds, as text or as an image, with where two
+        /// texts or binaries first differ. Two images speak for themselves.
+        /// </summary>
+        private static void Compare(string path)
+        {
+            var copy = KeptFiles.Copy(path);
+            var live = KeptFiles.Live(path);
+            var image = FileKeeper.IsImage(path);
+
+            try
+            {
+                var mine = ReadHead(copy, ViewerBytes);
+                var current = ReadHead(live, ViewerBytes);
+
+                Spacer(4f);
+                if (!image)
+                    Wrapped(Difference(mine, current, new FileInfo(copy).Length, new FileInfo(live).Length), _detail, DetailInner, 13, Color.white);
+                Version("Your copy", path, copy, mine, Kept);
+                Version("This one", path, live, current, GUIManager.Instance.ValheimOrange);
+            }
+            catch (Exception ex)
+            {
+                Wrapped("The two could not be read: " + ex.Message, _detail, DetailInner, 13, Dim);
+            }
+        }
+
+        /// <param name="path">The kept file's path, which names the file type for both versions.</param>
+        private static void Version(string title, string path, string full, byte[] head, Color color)
+        {
+            Spacer(8f);
+            var info = new FileInfo(full);
+            Wrapped($"{title}, written {info.LastWriteTime:yyyy-MM-dd HH:mm:ss}", _detail, DetailInner, 15, color, true);
+
+            if (FileKeeper.IsImage(path)) ImagePreview(path, full, info.Length, CompareHeight);
+            else if (IsText(head)) TextViewer(head, info.Length, CompareHeight);
+            else Wrapped("A binary file of " + SizeOf(info.Length) + ", with nothing to show as text.", _detail, DetailInner, 13, Dim);
+        }
+
+        /// <summary>Where the two versions first part, by line for text and by byte otherwise.</summary>
+        private static string Difference(byte[] mine, byte[] current, long mineLength, long currentLength)
+        {
+            if (IsText(mine) && IsText(current))
+            {
+                var a = Lines(mine);
+                var b = Lines(current);
+                var line = 0;
+                while (line < a.Length && line < b.Length && a[line] == b[line]) line++;
+
+                if (line < a.Length && line < b.Length) return $"The two first differ at line {line + 1}.";
+                if (a.Length != b.Length)
+                    return $"The two are the same for {Plural(line, "line")}, then {(a.Length > b.Length ? "your copy" : "this one")} goes on.";
+                return "The two hold the same text, apart from line endings or what lies past the part shown.";
+            }
+
+            var at = 0;
+            while (at < mine.Length && at < current.Length && mine[at] == current[at]) at++;
+            if (at < mine.Length && at < current.Length) return $"The two first differ at byte {at + 1}.";
+            return mineLength == currentLength
+                ? "The two hold the same bytes as far as they are read here."
+                : $"The two are the same for {SizeOf(at)}, then {(mineLength > currentLength ? "your copy" : "this one")} goes on.";
+        }
+
+        private static string[] Lines(byte[] bytes) =>
+            Encoding.UTF8.GetString(bytes).TrimStart('﻿').Replace("\r\n", "\n").Replace('\r', '\n').TrimEnd('\n').Split('\n');
+
+        /// <summary>A file with no zero byte near its start reads as text.</summary>
+        private static bool IsText(byte[] head) => Array.IndexOf(head, (byte)0, 0, Math.Min(head.Length, 4096)) < 0;
 
         private static void FileControls(string path, bool isFolder, string name, KeptPath by, bool keptItself)
         {
@@ -252,7 +368,7 @@ namespace Keepsake.UI
                     return null;
                 }, Sfx.Released, () => $"{name} is no longer kept. It stays as it is until the next profile sync."));
 
-                Wrapped("Kept. Keepsake saves a copy of " + (isFolder ? "every file in it" : "it") + " while the game runs, and puts the " +
+                Wrapped("Kept. Keepsake saves a copy of " + (isFolder ? "every file in it" : "it") + " as the game closes, and puts the " +
                         "copy back at launch if a profile sync replaced or removed it. Release stops that and removes the copies.",
                     _detail, DetailInner, 13, Dim);
                 return;
@@ -264,7 +380,7 @@ namespace Keepsake.UI
             Wrapped((isFolder
                         ? "Keeping a folder holds every file in it through profile syncs, and every file a mod adds to it later: "
                         : "Keeping a file holds it through profile syncs: ") +
-                    "Keepsake saves a copy while the game runs and puts it back at launch if a sync replaced or removed it. " +
+                    "Keepsake saves a copy as the game closes and puts it back at launch if a sync replaced or removed it. " +
                     "Mods that keep their state in files, such as a timer per world, carry on where you left them. " +
                     "At launch your copy wins, so change a kept file while the game runs.",
                 _detail, DetailInner, 13, Dim);
@@ -318,14 +434,14 @@ namespace Keepsake.UI
                 if (FileKeeper.IsImage(path))
                 {
                     Wrapped("Preview", _detail, DetailInner, 13, Dim);
-                    ImagePreview(path, full, length);
+                    ImagePreview(path, full, length, 240f);
                     return;
                 }
 
                 var head = ReadHead(full, ViewerBytes);
-                if (Array.IndexOf(head, (byte)0, 0, Math.Min(head.Length, 4096)) < 0)
+                if (IsText(head))
                 {
-                    TextViewer(head, length);
+                    TextViewer(head, length, ViewerHeight);
                     return;
                 }
 
@@ -357,7 +473,7 @@ namespace Keepsake.UI
         /// A text file in a scroll box of its own, set apart from the panel by its background and a
         /// fixed width font. Read only; shown as it is, markup and all.
         /// </summary>
-        private static void TextViewer(byte[] bytes, long length)
+        private static void TextViewer(byte[] bytes, long length, float height)
         {
             var cut = length > bytes.Length;
             var text = Encoding.UTF8.GetString(bytes).TrimStart('\uFEFF').Replace("\r\n", "\n").Replace('\r', '\n').Replace("\t", "    ");
@@ -370,8 +486,8 @@ namespace Keepsake.UI
                 _detail, DetailInner, 12, Dim);
 
             var box = GUIManager.Instance.CreateScrollView(_detail, false, true, 6f, 4f,
-                GUIManager.Instance.ValheimScrollbarHandleColorBlock, new Color(0f, 0f, 0f, 0.3f), DetailInner, ViewerHeight);
-            Fix(box, DetailInner, ViewerHeight);
+                GUIManager.Instance.ValheimScrollbarHandleColorBlock, new Color(0f, 0f, 0f, 0.3f), DetailInner, height);
+            Fix(box, DetailInner, height);
             var background = box.GetComponent<Image>() ?? box.AddComponent<Image>();
             background.color = ViewerBackground;
 
@@ -427,7 +543,8 @@ namespace Keepsake.UI
             }
             if (block.Length > 0) yield return block.ToString();
         }
-        private static void ImagePreview(string path, string full, long length)
+        /// <summary>An image fitted into the column, no taller than maxHeight. The type is told by path, since a copy's own name ends in .kept.</summary>
+        private static void ImagePreview(string path, string full, long length, float maxHeight)
         {
             var ext = System.IO.Path.GetExtension(path).ToLowerInvariant();
             if (ext != ".png" && ext != ".jpg" && ext != ".jpeg")
@@ -441,7 +558,6 @@ namespace Keepsake.UI
                 return;
             }
 
-            ClearPreview();
             var texture = new Texture2D(2, 2);
             if (!LoadImage(texture, File.ReadAllBytes(full)))
             {
@@ -449,10 +565,10 @@ namespace Keepsake.UI
                 Wrapped("The game cannot read this image.", _detail, DetailInner, 13, Dim);
                 return;
             }
-            _preview = texture;
+            _previews.Add(texture);
 
             // Fit into the column, and let small textures grow a little so they can be made out.
-            var scale = Mathf.Min(DetailInner / texture.width, 240f / texture.height, 4f);
+            var scale = Mathf.Min(DetailInner / texture.width, maxHeight / texture.height, 4f);
             var go = new GameObject("preview", typeof(RectTransform), typeof(RawImage));
             go.transform.SetParent(_detail, false);
             var image = go.GetComponent<RawImage>();
@@ -460,7 +576,7 @@ namespace Keepsake.UI
             image.raycastTarget = false;
             Fix(go, texture.width * scale, texture.height * scale);
 
-            Wrapped($"{texture.width} x {texture.height}", _detail, DetailInner, 12, Dim);
+            Wrapped($"{texture.width} x {texture.height}, {SizeOf(length)}", _detail, DetailInner, 12, Dim);
         }
 
         private static System.Reflection.MethodInfo _loadImage;

@@ -48,17 +48,13 @@ namespace Keepsake
             var pins = PinFile.Read();
             var kept = KeptFiles.Read();
 
-            var written = new List<string> { PinFile.FilePath, ProfileChanges.FilePath, KeptFiles.ListPath };
+            var written = new List<string> { PinFile.FilePath, ProfileChanges.FilePath, KeptFiles.ListPath, SessionFile.FilePath };
             if (pins != null) written.AddRange(pins.Select(p => PinFile.Absolute(p.File)));
             if (kept != null) written.AddRange(Restorer.KeptFilePaths(kept));
             var leftovers = Restorer.RemoveLeftovers(written);
             if (leftovers > 0) log.LogInfo($"Keepsake: removed {leftovers} file(s) left half written by a game that stopped mid-save.");
 
-            if (kept != null && kept.Count > 0)
-            {
-                var back = KeptFiles.Restore(kept);
-                log.LogInfo($"Keepsake: {kept.Count} kept file(s) or folder(s), {back} file(s) put back before the mods loaded.");
-            }
+            if (kept != null) Restorer.SettleFiles(kept, DateTime.UtcNow, SessionFile.LogEnd());
 
             if (pins == null) return;
             if (pins.Count == 0)

@@ -7,13 +7,17 @@ using Xunit;
 namespace Keepsake.Tests
 {
     /// <summary>
-    /// Kept files: a copy saved while the game runs, put back at launch when a profile sync
-    /// replaced or removed the file, and nothing else touched.
+    /// Kept files: a copy saved as the game closes, and at launch a file that changed since told
+    /// by when it was written. While the game ran, and it is yours. After a game Keepsake saw
+    /// close, and a profile sync replaced it, so your copy goes back. After any other game, and
+    /// it waits for you to choose.
     /// </summary>
     [Collection(ProfileCollection.Name)]
     public class KeptFilesTests
     {
         private const string Timers = "Seasonality/LastSeasonChangeData";
+
+        private const string Solo = Timers + "/Solo.Seasonality.bin";
 
         private static readonly DateTime Earlier = new DateTime(2026, 9, 1, 12, 0, 0, DateTimeKind.Utc);
 
@@ -27,14 +31,40 @@ namespace Keepsake.Tests
             return full;
         }
 
-        /// <summary>The next launch: the preloader reads the list and puts copies back.</summary>
-        private static int Launch() => KeptFiles.Restore(KeptFiles.Read());
+        /// <summary>
+        /// A launch: the preloader settles the kept files, given when the last game's log ended,
+        /// and the plugin starts afresh.
+        /// </summary>
+        private static SettleResult Launch(DateTime at, DateTime? logEnd = null)
+        {
+            var result = Restorer.SettleFiles(KeptFiles.Read(), at, logEnd);
+            FileKeeper.Reset();
+            return result;
+        }
+
+        /// <summary>The plugin seeing the game close.</summary>
+        private static void Close(DateTime at) => FileKeeper.Close("test", at);
+
+        private static string CopyOf(string path) => File.ReadAllText(KeptFiles.Copy(path));
+
+        /// <summary>A file left waiting: kept, then a crash, then a change after the log ended.</summary>
+        private static string Waiting(TestProfile profile)
+        {
+            var file = Write(profile, Solo, "spring");
+            FileKeeper.Keep(Timers, isFolder: true);
+            Launch(Earlier.AddHours(1));
+
+            Write(profile, Solo, "the owner's", Earlier.AddDays(1));
+            var result = Launch(Earlier.AddDays(2), logEnd: Earlier.AddHours(3));
+            Assert.Equal(1, result.Waiting);
+            return file;
+        }
 
         [Fact]
         public void AKeptFolderIsCopiedOutsideConfigUnderANameNoSyncTakes()
         {
             using var profile = new TestProfile();
-            Write(profile, Timers + "/Solo.Seasonality.bin", "one");
+            Write(profile, Solo, "one");
 
             Assert.Null(FileKeeper.Keep(Timers, isFolder: true));
 
@@ -47,6 +77,7 @@ namespace Keepsake.Tests
             {
                 Assert.False(copy.EndsWith(ending));
                 Assert.False(KeptFiles.ListPath.EndsWith(ending));
+                Assert.False(SessionFile.FilePath.EndsWith(ending));
             }
         }
 
@@ -54,26 +85,30 @@ namespace Keepsake.Tests
         public void AFileASyncRemovedIsPutBackAtLaunch()
         {
             using var profile = new TestProfile();
-            var file = Write(profile, Timers + "/Solo.Seasonality.bin", "one");
+            var file = Write(profile, Solo, "one");
             FileKeeper.Keep(Timers, isFolder: true);
+            Close(Earlier.AddHours(1));
 
             File.Delete(file);
 
-            Assert.Equal(1, Launch());
+            Assert.Equal(1, Launch(Earlier.AddDays(1), logEnd: Earlier.AddHours(1)).PutBack);
             Assert.Equal("one", File.ReadAllText(file));
             Assert.Equal(Earlier, File.GetLastWriteTimeUtc(file));
         }
 
         [Fact]
-        public void AFileASyncReplacedIsPutBackAtLaunch()
+        public void AFileASyncReplacedAfterTheGameClosedIsPutBack()
         {
             using var profile = new TestProfile();
             var file = Write(profile, "Mod/state.json", "mine");
             FileKeeper.Keep("Mod/state.json", isFolder: false);
+            Close(Earlier.AddHours(1));
 
             Write(profile, "Mod/state.json", "the owner's", Earlier.AddDays(1));
 
-            Assert.Equal(1, Launch());
+            var result = Launch(Earlier.AddDays(1).AddMinutes(1), logEnd: Earlier.AddHours(1).AddSeconds(2));
+            Assert.True(result.Clean);
+            Assert.Equal(1, result.PutBack);
             Assert.Equal("mine", File.ReadAllText(file));
         }
 
@@ -81,41 +116,310 @@ namespace Keepsake.Tests
         public void AFileNobodyTouchedIsLeftAsItIs()
         {
             using var profile = new TestProfile();
-            Write(profile, Timers + "/Solo.Seasonality.bin", "one");
+            Write(profile, Solo, "one");
             FileKeeper.Keep(Timers, isFolder: true);
+            Close(Earlier.AddHours(1));
 
-            Assert.Equal(0, Launch());
+            var result = Launch(Earlier.AddDays(1), logEnd: Earlier.AddHours(1));
+            Assert.Equal(0, result.PutBack + result.Updated + result.Waiting);
         }
 
         [Fact]
         public void WhatTheModWritesWhileTheGameRunsIsWhatComesBack()
         {
             using var profile = new TestProfile();
-            var file = Write(profile, Timers + "/Solo.Seasonality.bin", "spring");
+            var file = Write(profile, Solo, "spring");
             FileKeeper.Keep(Timers, isFolder: true);
 
             // The season moved on, and a new world was made.
-            Write(profile, Timers + "/Solo.Seasonality.bin", "summer", Earlier.AddHours(1));
-            var added = Write(profile, Timers + "/Other.Seasonality.bin", "winter");
-            FileKeeper.Flush();
+            Write(profile, Solo, "summer", Earlier.AddHours(1));
+            var added = Write(profile, Timers + "/Other.Seasonality.bin", "winter", Earlier.AddHours(1));
+            Close(Earlier.AddHours(2));
 
             File.Delete(file);
             File.Delete(added);
-            Assert.Equal(2, Launch());
+            Assert.Equal(2, Launch(Earlier.AddDays(1), logEnd: Earlier.AddHours(2)).PutBack);
             Assert.Equal("summer", File.ReadAllText(file));
             Assert.Equal("winter", File.ReadAllText(added));
+        }
+
+        [Fact]
+        public void ASyncAfterTheModWroteIsUndoneWithTheModsVersion()
+        {
+            using var profile = new TestProfile();
+            var file = Write(profile, Solo, "spring");
+            FileKeeper.Keep(Timers, isFolder: true);
+
+            Write(profile, Solo, "summer", Earlier.AddHours(1));
+            Close(Earlier.AddHours(2));
+            Write(profile, Solo, "the owner's", Earlier.AddDays(1));
+
+            Assert.Equal(1, Launch(Earlier.AddDays(2), logEnd: Earlier.AddHours(2)).PutBack);
+            Assert.Equal("summer", File.ReadAllText(file));
+        }
+
+        [Fact]
+        public void AModWritingAfterKeepsakeClosedStillCountsAsTheGames()
+        {
+            using var profile = new TestProfile();
+            var file = Write(profile, Solo, "spring");
+            FileKeeper.Keep(Timers, isFolder: true);
+            Close(Earlier.AddHours(1));
+
+            // Another mod saves its file on the way out, after Keepsake's last hook.
+            Write(profile, Solo, "late", Earlier.AddHours(1).AddSeconds(5));
+
+            var result = Launch(Earlier.AddDays(1), logEnd: Earlier.AddHours(1).AddSeconds(10));
+            Assert.True(result.Clean);
+            Assert.Equal(1, result.Updated);
+            Assert.Equal("late", File.ReadAllText(file));
+            Assert.Equal("late", CopyOf(Solo));
+        }
+
+        [Fact]
+        public void AfterACrashWhatTheModWroteBeforeTheLogEndedIsKept()
+        {
+            using var profile = new TestProfile();
+            var file = Write(profile, Solo, "spring");
+            FileKeeper.Keep(Timers, isFolder: true);
+            Launch(Earlier.AddHours(1));
+
+            // No close: the game crashed after the mod wrote.
+            Write(profile, Solo, "summer", Earlier.AddHours(2));
+
+            var result = Launch(Earlier.AddDays(1), logEnd: Earlier.AddHours(2).AddSeconds(30));
+            Assert.False(result.Clean);
+            Assert.Equal(1, result.Updated);
+            Assert.Equal("summer", File.ReadAllText(file));
+            Assert.Equal("summer", CopyOf(Solo));
+        }
+
+        [Fact]
+        public void AfterACrashAFileWrittenAfterTheLogEndedWaitsAndIsLeftAlone()
+        {
+            using var profile = new TestProfile();
+            var file = Waiting(profile);
+
+            Assert.Equal("the owner's", File.ReadAllText(file));
+            Assert.Equal("spring", CopyOf(Solo));
+            Assert.NotNull(FileKeeper.WaitingFor(Solo));
+            Assert.Equal(1, FileKeeper.WaitingCount);
+
+            // Still waiting at the launch after, and still untouched.
+            var again = Launch(Earlier.AddDays(3), logEnd: Earlier.AddDays(2).AddHours(1));
+            Assert.Equal(1, again.Waiting);
+            Assert.Equal("the owner's", File.ReadAllText(file));
+        }
+
+        [Fact]
+        public void GamesPlayedWithoutKeepsakeKeepWhatTheModWrote()
+        {
+            using var profile = new TestProfile();
+            var file = Write(profile, Solo, "spring");
+            FileKeeper.Keep(Timers, isFolder: true);
+            Close(Earlier.AddHours(1));
+
+            // Keepsake is off, or gone and installed again later; the mod carries on meanwhile.
+            Write(profile, Solo, "autumn", Earlier.AddDays(3));
+
+            var result = Launch(Earlier.AddDays(10), logEnd: Earlier.AddDays(3).AddHours(1));
+            Assert.False(result.Clean);
+            Assert.Equal(1, result.Updated);
+            Assert.Equal("autumn", File.ReadAllText(file));
+        }
+
+        [Fact]
+        public void ASyncAfterGamesWithoutKeepsakeWaits()
+        {
+            using var profile = new TestProfile();
+            var file = Write(profile, Solo, "spring");
+            FileKeeper.Keep(Timers, isFolder: true);
+            Close(Earlier.AddHours(1));
+
+            Write(profile, Solo, "the owner's", Earlier.AddDays(3));
+
+            var result = Launch(Earlier.AddDays(4), logEnd: Earlier.AddDays(1));
+            Assert.Equal(1, result.Waiting);
+            Assert.Equal("the owner's", File.ReadAllText(file));
+        }
+
+        [Fact]
+        public void ALogThatWentOnLongAfterTheCloseIsNotAGameKeepsakeSawClose()
+        {
+            var state = new SessionState { Started = Earlier, Closed = Earlier.AddHours(1) };
+
+            Assert.True(KeptFiles.ClosedCleanly(state, Earlier.AddHours(1).AddSeconds(30)));
+            Assert.False(KeptFiles.ClosedCleanly(state, Earlier.AddHours(1) + KeptFiles.LogGrace + TimeSpan.FromSeconds(1)));
+            Assert.True(KeptFiles.ClosedCleanly(state, logEnd: null));
+
+            // A launch after the close, and no close since: a crash, or a game the plugin did not load in.
+            state.Started = Earlier.AddHours(2);
+            Assert.False(KeptFiles.ClosedCleanly(state, Earlier.AddHours(1)));
+            Assert.False(KeptFiles.ClosedCleanly(new SessionState(), Earlier));
+        }
+
+        [Fact]
+        public void TheFirstLaunchWithoutASessionFileNeverPutsACopyBackOverAChange()
+        {
+            using var profile = new TestProfile();
+            var file = Write(profile, Solo, "spring");
+            FileKeeper.Keep(Timers, isFolder: true);
+
+            // As after an update from 0.4.0, which kept no session file.
+            Write(profile, Solo, "the owner's", Earlier.AddDays(1));
+
+            var result = Launch(Earlier.AddDays(2), logEnd: Earlier.AddHours(5));
+            Assert.Equal(1, result.Waiting);
+            Assert.Equal("the owner's", File.ReadAllText(file));
+        }
+
+        [Fact]
+        public void PutBackRestoresYourCopyAtTheNextLaunchAndTheCloseLeavesItAlone()
+        {
+            using var profile = new TestProfile();
+            var file = Waiting(profile);
+
+            Assert.Null(FileKeeper.PutBack(Solo));
+            Assert.Equal(0, FileKeeper.WaitingCount);
+
+            // The mod writes on during the game, but your copy is what you chose.
+            Write(profile, Solo, "the owner's, played on", Earlier.AddDays(2).AddHours(1));
+            Close(Earlier.AddDays(2).AddHours(2));
+            Assert.Equal("spring", CopyOf(Solo));
+
+            var result = Launch(Earlier.AddDays(3), logEnd: Earlier.AddDays(2).AddHours(2));
+            Assert.Equal(1, result.PutBack);
+            Assert.Equal("spring", File.ReadAllText(file));
+            Assert.Null(FileKeeper.WaitingFor(Solo));
+        }
+
+        [Fact]
+        public void KeepThisOneMakesTheCopyFromTheFile()
+        {
+            using var profile = new TestProfile();
+            var file = Waiting(profile);
+
+            Assert.Null(FileKeeper.KeepCurrent(Solo));
+
+            Assert.Equal("the owner's", CopyOf(Solo));
+            Assert.Null(FileKeeper.WaitingFor(Solo));
+            Assert.DoesNotContain(Solo, File.ReadAllText(SessionFile.FilePath));
+
+            Close(Earlier.AddDays(2).AddHours(1));
+            var result = Launch(Earlier.AddDays(3), logEnd: Earlier.AddDays(2).AddHours(1));
+            Assert.Equal(0, result.PutBack + result.Updated + result.Waiting);
+            Assert.Equal("the owner's", File.ReadAllText(file));
+        }
+
+        [Fact]
+        public void AWaitingFileThatMatchesItsCopyAgainNoLongerWaits()
+        {
+            using var profile = new TestProfile();
+            var file = Waiting(profile);
+
+            File.Copy(KeptFiles.Copy(Solo), file, true);
+            File.SetLastWriteTimeUtc(file, File.GetLastWriteTimeUtc(KeptFiles.Copy(Solo)));
+
+            Assert.Equal(0, Launch(Earlier.AddDays(3)).Waiting);
+            Assert.Null(FileKeeper.WaitingFor(Solo));
+        }
+
+        [Fact]
+        public void ReleasingAWaitingFileForgetsTheQuestion()
+        {
+            using var profile = new TestProfile();
+            var file = Waiting(profile);
+
+            FileKeeper.Release(Timers);
+
+            Assert.Null(FileKeeper.WaitingFor(Solo));
+            Assert.Equal("the owner's", File.ReadAllText(file));
+        }
+
+        [Fact]
+        public void TheSessionFileIsThereOnlyWhileSomethingIsKept()
+        {
+            using var profile = new TestProfile();
+            Write(profile, Solo, "one");
+
+            Launch(Earlier);
+            Assert.False(File.Exists(SessionFile.FilePath));
+
+            FileKeeper.Keep(Timers, isFolder: true);
+            Close(Earlier.AddHours(1));
+            Assert.True(File.Exists(SessionFile.FilePath));
+
+            FileKeeper.Release(Timers);
+            Close(Earlier.AddHours(2));
+            Assert.False(File.Exists(SessionFile.FilePath));
+        }
+
+        [Fact]
+        public void ASessionFileOfANewerVersionIsNeverWrittenOverAndNothingIsPutBackOverAChange()
+        {
+            using var profile = new TestProfile();
+            var file = Write(profile, Solo, "spring");
+            FileKeeper.Keep(Timers, isFolder: true);
+            var newer = "# keepsake session v99\nclosed\t2026-09-01T13:00:00.0000000Z\n";
+            File.WriteAllText(SessionFile.FilePath, newer);
+
+            Close(Earlier.AddHours(1));
+            Write(profile, Solo, "the owner's", Earlier.AddDays(1));
+            var result = Launch(Earlier.AddDays(2), logEnd: Earlier.AddHours(1));
+
+            Assert.Equal(newer, File.ReadAllText(SessionFile.FilePath));
+            Assert.Equal(0, result.PutBack);
+            Assert.Equal("the owner's", File.ReadAllText(file));
+        }
+
+        [Fact]
+        public void TheSessionFileReadsBackWhatWasWritten()
+        {
+            var state = new SessionState { Started = Earlier, Closed = Earlier.AddHours(1), ClosedBy = "exit" };
+            state.Waiting.Add(new WaitingFile { Path = Solo });
+            state.Waiting.Add(new WaitingFile { Path = "Mod/state.json", PutBack = true });
+
+            var read = SessionFile.Parse(SessionFile.Format(state));
+
+            Assert.Equal(Earlier, read.Started);
+            Assert.Equal(DateTimeKind.Utc, read.Started!.Value.Kind);
+            Assert.Equal(Earlier.AddHours(1), read.Closed);
+            Assert.Equal("exit", read.ClosedBy);
+            Assert.False(read.WaitingFor(Solo)!.PutBack);
+            Assert.True(read.WaitingFor("mod/STATE.json")!.PutBack);
+
+            // A path a hand edit pointed outside config is dropped.
+            Assert.Empty(SessionFile.Parse(new[] { SessionFile.Version, "[files]", "../BepInEx.cfg\tput back" }).Waiting);
+        }
+
+        [Fact]
+        public void TheLogEndIsTheLatestOfTheLogFiles()
+        {
+            using var profile = new TestProfile();
+            Assert.Null(SessionFile.LogEnd());
+
+            var log = Path.Combine(profile.Root, "LogOutput.log");
+            var second = Path.Combine(profile.Root, "LogOutput.log.1");
+            File.WriteAllText(log, "a");
+            File.WriteAllText(second, "b");
+            File.SetLastWriteTimeUtc(log, Earlier);
+            File.SetLastWriteTimeUtc(second, Earlier.AddHours(1));
+
+            Assert.Equal(Earlier.AddHours(1), SessionFile.LogEnd());
         }
 
         [Fact]
         public void FilesASyncBroughtIntoAKeptFolderAreLeftAlone()
         {
             using var profile = new TestProfile();
-            Write(profile, Timers + "/Solo.Seasonality.bin", "one");
+            Write(profile, Solo, "one");
             FileKeeper.Keep(Timers, isFolder: true);
+            Close(Earlier.AddHours(1));
 
-            var owners = Write(profile, Timers + "/Server.Seasonality.bin", "the owner's");
+            var owners = Write(profile, Timers + "/Server.Seasonality.bin", "the owner's", Earlier.AddDays(1));
 
-            Assert.Equal(0, Launch());
+            var result = Launch(Earlier.AddDays(2), logEnd: Earlier.AddHours(1));
+            Assert.Equal(0, result.PutBack + result.Updated + result.Waiting);
             Assert.Equal("the owner's", File.ReadAllText(owners));
         }
 
@@ -123,7 +427,7 @@ namespace Keepsake.Tests
         public void ReleasingRemovesTheCopiesAndLeavesTheFile()
         {
             using var profile = new TestProfile();
-            var file = Write(profile, Timers + "/Solo.Seasonality.bin", "one");
+            var file = Write(profile, Solo, "one");
             FileKeeper.Keep(Timers, isFolder: true);
 
             FileKeeper.Release(Timers);
@@ -137,17 +441,18 @@ namespace Keepsake.Tests
         public void KeepingAFolderTakesInWhatWasKeptInsideIt()
         {
             using var profile = new TestProfile();
-            var file = Write(profile, Timers + "/Solo.Seasonality.bin", "one");
-            FileKeeper.Keep(Timers + "/Solo.Seasonality.bin", isFolder: false);
+            var file = Write(profile, Solo, "one");
+            FileKeeper.Keep(Solo, isFolder: false);
 
             FileKeeper.Keep("Seasonality", isFolder: true);
 
             var kept = Assert.Single(FileKeeper.Kept);
             Assert.Equal("Seasonality", kept.Path);
-            Assert.Same(kept, FileKeeper.KeptBy(Timers + "/Solo.Seasonality.bin"));
+            Assert.Same(kept, FileKeeper.KeptBy(Solo));
 
+            Close(Earlier.AddHours(1));
             File.Delete(file);
-            Assert.Equal(1, Launch());
+            Assert.Equal(1, Launch(Earlier.AddDays(1), logEnd: Earlier.AddHours(1)).PutBack);
         }
 
         [Theory]
@@ -203,16 +508,33 @@ namespace Keepsake.Tests
         }
 
         [Fact]
+        public void TheFilesListCountsNumbersInNames()
+        {
+            using var profile = new TestProfile();
+            foreach (var n in new[] { 10, 2, 1, 11 }) Write(profile, $"Test/{n}-file.txt", "x");
+            Write(profile, "Test 2/a.txt", "x");
+            Write(profile, "Test 10/a.txt", "x");
+
+            var paths = FileKeeper.Browse(new string[0]).Select(i => i.Path + (i.IsFolder ? "/" : "")).ToArray();
+
+            Assert.Equal(new[]
+            {
+                "Test/", "Test/1-file.txt", "Test/2-file.txt", "Test/10-file.txt", "Test/11-file.txt",
+                "Test 2/", "Test 2/a.txt", "Test 10/", "Test 10/a.txt",
+            }, paths);
+        }
+
+        [Fact]
         public void TheLeftoverCheckCoversKeptFilesAndTheirCopies()
         {
             using var profile = new TestProfile();
-            var file = Write(profile, Timers + "/Solo.Seasonality.bin", "one");
+            var file = Write(profile, Solo, "one");
             FileKeeper.Keep(Timers, isFolder: true);
 
             var paths = Restorer.KeptFilePaths(KeptFiles.Read()).ToList();
 
             Assert.Contains(file, paths);
-            Assert.Contains(KeptFiles.Copy(Timers + "/Solo.Seasonality.bin"), paths);
+            Assert.Contains(KeptFiles.Copy(Solo), paths);
         }
     }
 }

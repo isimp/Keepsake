@@ -128,6 +128,46 @@ namespace Keepsake
         }
 
         /// <summary>
+        /// The kept files at launch: each one that changed since its copy is put back, brought
+        /// into its copy, or left waiting for an answer (see KeptFiles.Settle), and the launch is
+        /// written down, so the next one can tell whether this game closed. Nothing is written
+        /// while nothing is kept, and a session file of another version is never written over:
+        /// the files are then settled as after a game Keepsake did not see close.
+        /// </summary>
+        /// <param name="logEnd">When the last game's BepInEx log was last written. See SessionFile.LogEnd.</param>
+        public static SettleResult SettleFiles(List<KeptPath> kept, DateTime now, DateTime? logEnd)
+        {
+            if (kept.Count == 0)
+            {
+                try
+                {
+                    if (File.Exists(SessionFile.FilePath) && SessionFile.Read() != null) File.Delete(SessionFile.FilePath);
+                }
+                catch (Exception ex)
+                {
+                    PinFile.Log?.LogWarning($"Keepsake: could not remove {Path.GetFileName(SessionFile.FilePath)}: {ex.Message}");
+                }
+                return new SettleResult();
+            }
+
+            var session = SessionFile.Read();
+            var result = KeptFiles.Settle(kept, session ?? new SessionState(), logEnd);
+
+            if (session != null)
+            {
+                session.Started = now;
+                SessionFile.Write(session);
+            }
+
+            PinFile.Log?.LogInfo($"Keepsake: {kept.Count} kept file(s) or folder(s), the last game " +
+                                 (result.Clean ? "closed with Keepsake" : "was not seen closing") +
+                                 $", {result.PutBack} file(s) put back, {result.Updated} copy(s) brought up to date" +
+                                 (result.Waiting > 0 ? $", {result.Waiting} file(s) waiting for an answer in the panel" : "") +
+                                 " before the mods loaded.");
+            return result;
+        }
+
+        /// <summary>
         /// Every file Keepsake may write for the kept files: each one in BepInEx/config and its
         /// copy, for the leftover check.
         /// </summary>

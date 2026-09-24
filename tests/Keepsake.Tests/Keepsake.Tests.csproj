@@ -22,6 +22,7 @@
     <Compile Include="../../src/Keepsake/SettingIndex.cs" />
     <Compile Include="../../src/Keepsake/Session.cs" />
     <Compile Include="../../src/Keepsake/FileKeeper.cs" />
+    <Compile Include="../../src/Keepsake/NaturalOrder.cs" />
     <Compile Include="../../src/Keepsake.Preloader/Restorer.cs" />
   </ItemGroup>
 

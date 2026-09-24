@@ -83,10 +83,12 @@ namespace Keepsake
             _playSounds = Config.Bind("Panel", "PlaySounds", true,
                 "Play the game's interface sounds when the panel opens and closes, and when a setting is kept, released or given a new value.");
             _profileChangeNotice = Config.Bind("General", "ProfileChangeNotice", true,
-                "Say on screen, once your character appears, when the profile changed values you keep and those changes wait for an answer in the panel.");
+                "Say on screen, once your character appears, when the profile changed values you keep, or kept files were left as they are, and those wait for an answer in the panel.");
 
             var harmony = new Harmony(Guid);
             StartMenuKeys.Patch(harmony);
+
+            AppDomain.CurrentDomain.ProcessExit += OnProcessExit;
 
             Log.LogInfo("Keepsake loaded.");
         }
@@ -95,7 +97,7 @@ namespace Keepsake
         {
             // Your values first: closing the panel as the game shuts down may fail with the GUI
             // already gone.
-            FlushQuietly();
+            FlushQuietly("destroy");
 
             try
             {
@@ -107,15 +109,33 @@ namespace Keepsake
             }
         }
 
-        private void OnApplicationQuit() => FlushQuietly();
+        private void OnApplicationQuit() => FlushQuietly("quit");
 
-        /// <summary>Writes the values followed from a config manager that are still waiting, and copies of kept files, before the game closes.</summary>
-        private static void FlushQuietly()
+        /// <summary>
+        /// The runtime's exit event, later than the game's own hooks where the game raises it at
+        /// all. Kept files are copied once more there, so a mod that writes its file late still
+        /// counts as having written it while the game ran.
+        /// </summary>
+        private static void OnProcessExit(object sender, EventArgs e)
+        {
+            try
+            {
+                FileKeeper.Close("exit");
+            }
+            catch (Exception)
+            {
+                // Nothing is left to report to by now. The launch treats a close it was not told
+                // about as one it did not see, which is the safe side.
+            }
+        }
+
+        /// <summary>Writes the values followed from a config manager that are still waiting, and copies of kept files, as the game closes.</summary>
+        private static void FlushQuietly(string by)
         {
             try
             {
                 Keeper.Flush();
-                FileKeeper.Flush();
+                FileKeeper.Close(by);
             }
             catch (Exception ex)
             {
@@ -128,7 +148,6 @@ namespace Keepsake
             try
             {
                 Keeper.Tick(Time.realtimeSinceStartup);
-                FileKeeper.Tick(Time.realtimeSinceStartup);
                 ReconcileOnce();
                 CheckWaitingOnce();
                 NoticeProfileChangesOnce();
@@ -166,9 +185,9 @@ namespace Keepsake
         private float _noticeAt;
 
         /// <summary>
-        /// Profile changes to kept settings show only in the panel, so once a session, a few
-        /// seconds after your character appears and the kept values bound late are in place, a
-        /// line in the corner says how many wait for an answer.
+        /// Profile changes to kept settings, and kept files the launch left as they are, show only
+        /// in the panel, so once a session, a few seconds after your character appears and the
+        /// kept values bound late are in place, a line in the corner says how many wait for an answer.
         /// </summary>
         private void NoticeProfileChangesOnce()
         {
@@ -181,10 +200,15 @@ namespace Keepsake
             if (!_profileChangeNotice.Value) return;
 
             var count = Keeper.ProfileChanged().Count;
-            if (count == 0) return;
+            var files = FileKeeper.WaitingCount;
+            if (count == 0 && files == 0) return;
+
+            var what = new List<string>();
+            if (count > 0) what.Add($"the profile changed {(count == 1 ? "a value" : count + " values")} you keep");
+            if (files > 0) what.Add($"{(files == 1 ? "a kept file waits" : files + " kept files wait")} for an answer in Files");
 
             MessageHud.instance.ShowMessage(MessageHud.MessageType.TopLeft,
-                $"Keepsake: the profile changed {(count == 1 ? "a value" : count + " values")} you keep. Press {OpenKeyLabel()} to look.");
+                $"Keepsake: {string.Join(", and ", what.ToArray())}. Press {OpenKeyLabel()} to look.");
         }
 
         /// <summary>The open key as the keyboard labels it, modifiers first.</summary>

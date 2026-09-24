@@ -20,11 +20,27 @@ namespace Keepsake
             IsFolder && path.StartsWith(Path + "/", StringComparison.OrdinalIgnoreCase);
     }
 
+    /// <summary>What one launch did with the kept files.</summary>
+    public sealed class SettleResult
+    {
+        /// <summary>Whether the last game was one Keepsake saw close.</summary>
+        public bool Clean;
+
+        /// <summary>Files your copy went back into: replaced or removed by a sync, or put back as you chose.</summary>
+        public int PutBack;
+
+        /// <summary>Copies brought up to date from files a mod wrote that Keepsake had not copied yet.</summary>
+        public int Updated;
+
+        /// <summary>Files left as they are, waiting for you to choose between them and your copy.</summary>
+        public int Waiting;
+    }
+
     /// <summary>
     /// Files a mod keeps its state in, such as a timer per world, kept the way settings are.
-    /// While the game runs, the plugin copies each kept file into BepInEx/keepsake-files when it
-    /// changes, and at launch the preloader puts a copy back wherever a profile sync replaced or
-    /// removed the file, before any mod reads it.
+    /// As the game closes, the plugin copies each kept file into BepInEx/keepsake-files, and at
+    /// launch the preloader puts a copy back wherever a profile sync replaced or removed the file,
+    /// before any mod reads it. See Settle.
     ///
     /// A sync uploads everything under config and every cfg, txt, json, yml, yaml and ini file
     /// anywhere in the profile. So the copies sit outside config and each carries a .kept ending,
@@ -214,9 +230,10 @@ namespace Keepsake
         /// <summary>
         /// Makes a copy of every file the kept paths cover that changed since its last copy.
         /// A file gone from BepInEx/config keeps its copy, so a file a sync took away is put back
-        /// rather than forgotten. Returns how many were copied.
+        /// rather than forgotten. Files waiting for an answer keep the copy they have, since it is
+        /// one of the two to choose from. Returns how many were copied.
         /// </summary>
-        public static int Save(IEnumerable<KeptPath> kept)
+        public static int Save(IEnumerable<KeptPath> kept, Func<string, bool> waiting = null)
         {
             var saved = 0;
             foreach (var entry in kept)
@@ -236,6 +253,7 @@ namespace Keepsake
                 {
                     try
                     {
+                        if (waiting != null && waiting(path)) continue;
                         if (!Differ(Live(path), Copy(path))) continue;
                         CopyOver(Live(path), Copy(path));
                         saved++;
@@ -250,13 +268,43 @@ namespace Keepsake
         }
 
         /// <summary>
-        /// Puts the copy back of every kept file that is missing from BepInEx/config or differs
-        /// from its copy. Files the kept folders hold that have no copy, such as ones a sync
-        /// brought, are left as they are. Returns how many were put back.
+        /// How long a game's log may go on after Keepsake saw it close, with the game still Keepsake's.
+        /// Other mods log as they shut down after it. A game without Keepsake that started and
+        /// closed in that time never got as far as a world, so wrote no mod's state either.
         /// </summary>
-        public static int Restore(IEnumerable<KeptPath> kept)
+        public static readonly TimeSpan LogGrace = TimeSpan.FromMinutes(1);
+
+        /// <summary>
+        /// Whether the last game of this profile was one Keepsake saw close. Not after a crash, a
+        /// game in which the plugin did not load, or games played without Keepsake since; the log
+        /// tells those, since every game of the profile writes it.
+        /// </summary>
+        public static bool ClosedCleanly(SessionState state, DateTime? logEnd) =>
+            state.Closed != null &&
+            (state.Started == null || state.Closed >= state.Started) &&
+            (logEnd == null || logEnd <= state.Closed + LogGrace);
+
+        /// <summary>
+        /// The launch's look at every kept file that has a copy, before any mod reads one.
+        ///
+        /// A profile sync changes files while the game is closed, a mod while it runs. So a file
+        /// that differs from its copy is told by when it was written: before the last game ended,
+        /// and it is yours, a mod's own writing, and the copy is brought up to date from it; after,
+        /// and a sync replaced it, and your copy goes back. When the game ended is known for sure
+        /// only when Keepsake saw it close. Otherwise the end of the game's log stands in, and a
+        /// file written after that is left as it is, waiting for you to choose, since a mod
+        /// writing late in a crash and a sync after it look the same.
+        ///
+        /// A file that is missing is put back either way. Files the kept folders hold that have no
+        /// copy, such as ones a sync brought, are left as they are.
+        /// </summary>
+        /// <param name="logEnd">When the last game's BepInEx log was last written. See SessionFile.LogEnd.</param>
+        public static SettleResult Settle(IEnumerable<KeptPath> kept, SessionState state, DateTime? logEnd)
         {
-            var restored = 0;
+            var result = new SettleResult { Clean = ClosedCleanly(state, logEnd) };
+            var end = result.Clean ? Later(state.Closed, logEnd) : logEnd;
+            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
             foreach (var entry in kept)
             {
                 List<string> copies;
@@ -272,21 +320,76 @@ namespace Keepsake
 
                 foreach (var path in copies)
                 {
+                    seen.Add(path);
                     try
                     {
-                        if (!Differ(Copy(path), Live(path))) continue;
-                        CopyOver(Copy(path), Live(path));
-                        restored++;
-                        PinFile.Log?.LogInfo($"Keepsake: put back your copy of {path}.");
+                        SettleOne(path, state, end, result);
                     }
                     catch (Exception ex)
                     {
-                        PinFile.Log?.LogWarning($"Keepsake: could not put back {path}: {ex.Message}");
+                        PinFile.Log?.LogWarning($"Keepsake: could not settle {path}: {ex.Message}");
                     }
                 }
             }
-            return restored;
+
+            // Files no longer kept, or whose copy is gone, have nothing left to choose between.
+            state.Waiting.RemoveAll(w => !seen.Contains(w.Path));
+            return result;
         }
+
+        private static void SettleOne(string path, SessionState state, DateTime? end, SettleResult result)
+        {
+            var live = Live(path);
+            var copy = Copy(path);
+
+            var waiting = state.WaitingFor(path);
+            if (waiting != null)
+            {
+                if (waiting.PutBack)
+                {
+                    CopyOver(copy, live);
+                    state.Waiting.Remove(waiting);
+                    result.PutBack++;
+                    PinFile.Log?.LogInfo($"Keepsake: put back your copy of {path}, as you chose.");
+                }
+                else if (!Differ(copy, live)) state.Waiting.Remove(waiting);
+                else result.Waiting++;
+                return;
+            }
+
+            if (!File.Exists(live))
+            {
+                CopyOver(copy, live);
+                result.PutBack++;
+                PinFile.Log?.LogInfo($"Keepsake: put back your copy of {path}, which was missing.");
+                return;
+            }
+
+            if (!Differ(copy, live)) return;
+
+            var written = File.GetLastWriteTimeUtc(live);
+            if (end != null && written <= end)
+            {
+                CopyOver(live, copy);
+                result.Updated++;
+                PinFile.Log?.LogInfo($"Keepsake: {path} was written while the game ran, so your copy now matches it.");
+            }
+            else if (result.Clean)
+            {
+                CopyOver(copy, live);
+                result.PutBack++;
+                PinFile.Log?.LogInfo($"Keepsake: put back your copy of {path}, which changed after the game closed.");
+            }
+            else
+            {
+                state.Waiting.Add(new WaitingFile { Path = path });
+                result.Waiting++;
+                PinFile.Log?.LogInfo($"Keepsake: left {path} as it is. It changed after a game Keepsake did not see close, " +
+                                     "so it waits for you to choose between it and your copy in the panel.");
+            }
+        }
+
+        private static DateTime? Later(DateTime? a, DateTime? b) => a == null ? b : b == null ? a : a > b ? a : b;
 
         /// <summary>Removes the copies of a path no longer kept.</summary>
         public static void Forget(KeptPath kept)

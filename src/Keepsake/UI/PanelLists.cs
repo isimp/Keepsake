@@ -464,9 +464,9 @@ namespace Keepsake.UI
                 : (row.Pin.File + " " + row.Pin.Section + " " + row.Pin.Key).ToLowerInvariant(), words);
 
         private static List<Row> Sorted(IEnumerable<Row> rows) => rows
-            .OrderBy(r => r.ModName, StringComparer.OrdinalIgnoreCase)
-            .ThenBy(r => r.Section, StringComparer.OrdinalIgnoreCase)
-            .ThenBy(r => r.Key, StringComparer.OrdinalIgnoreCase)
+            .OrderBy(r => r.ModName, NaturalOrder.IgnoreCase)
+            .ThenBy(r => r.Section, NaturalOrder.IgnoreCase)
+            .ThenBy(r => r.Key, NaturalOrder.IgnoreCase)
             .ToList();
 
         private static Row RowOf(Setting setting) => new Row

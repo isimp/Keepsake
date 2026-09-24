@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.4.1
+
+Kept files are copied as the game closes instead of every ten seconds. At launch, a kept file that differs from its copy is judged by when it was written. Written during the last game, it is yours and its copy is updated. Written after the game closed, a profile sync replaced it and your copy goes back. Before, an outdated copy could be put back over a newer file after a crash, after a game in which Keepsake did not load, or when Keepsake was turned back on after a while.
+
+When Keepsake cannot tell, after a game it did not see close, the file is left as it is and waits in Files for you to put your copy back or keep the file as it is. Both versions are shown one over the other to compare: texts in viewers with the line where they first differ, images as thumbnails.
+
+Lists count numbers in names as numbers, so 2 comes before 10, for files as well as mods, sections and settings.
+
 ## 0.4.0
 
 Files and folders in BepInEx/config can be kept whole, from the new Files place in the panel. Keepsake saves a copy while the game runs and puts it back at launch when a profile sync replaced or removed the file, so a mod that keeps state in files, such as Seasonality's timer for each world, carries on where you left it. The Files list leaves out images unless asked, and shows a text file whole in a viewer of its own, or the image itself.

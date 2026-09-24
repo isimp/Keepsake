@@ -33,17 +33,16 @@ namespace Keepsake
     }
 
     /// <summary>
-    /// Kept files while the game runs: keeping and releasing, and saving a copy of every kept file
-    /// that changed. See KeptFiles.
+    /// Kept files while the game runs: keeping and releasing, answering for files left waiting at
+    /// launch, and a copy of every kept file that changed as the game closes. See KeptFiles.
     /// </summary>
     public static class FileKeeper
     {
-        /// <summary>How often kept files are checked for changes while the game runs, in seconds.</summary>
-        public const float SaveEvery = 10f;
-
         private static List<KeptPath> _kept;
         private static bool _unreadable;
-        private static float _saveAt;
+
+        private static SessionState _session;
+        private static bool _sessionUnreadable;
 
         public static string IdOf(string path, bool isFolder) => "file:" + path + (isFolder ? "/" : "");
 
@@ -97,23 +96,80 @@ namespace Keepsake
             if (entry == null) return;
 
             _kept.Remove(entry);
-            if (KeptFiles.Write(_kept)) KeptFiles.Forget(entry);
+            if (!KeptFiles.Write(_kept)) return;
+            KeptFiles.Forget(entry);
+
+            var session = Session;
+            if (session != null && session.Waiting.RemoveAll(w => entry.Covers(w.Path)) > 0) SessionFile.Write(session);
         }
 
-        /// <summary>Called every frame with the time; saves copies of kept files that changed, every SaveEvery seconds.</summary>
-        public static void Tick(float now)
+        /// <summary>keepsake.session as the preloader left it this launch, or null when it cannot be read, and is then never written over.</summary>
+        private static SessionState Session
         {
-            if (now < _saveAt) return;
-            _saveAt = now + SaveEvery;
-            Flush();
+            get
+            {
+                if (_session != null || _sessionUnreadable) return _session;
+                _session = SessionFile.Read();
+                _sessionUnreadable = _session == null;
+                return _session;
+            }
         }
 
-        /// <summary>Saves copies of kept files that changed, such as when the game closes.</summary>
-        public static void Flush()
+        /// <summary>A kept file left as it is at launch, waiting for you to choose between it and your copy, or null.</summary>
+        public static WaitingFile WaitingFor(string path) => Session?.WaitingFor(path);
+
+        /// <summary>How many kept files wait for an answer, leaving out those whose copy already goes back at the next launch.</summary>
+        public static int WaitingCount => Session?.Waiting.Count(w => !w.PutBack && KeptBy(w.Path) != null) ?? 0;
+
+        /// <summary>Your copy goes back in at the next launch, before any mod reads the file.</summary>
+        public static string PutBack(string path)
         {
-            if (Kept.Count == 0) return;
-            var saved = KeptFiles.Save(Kept);
-            if (saved > 0) Plugin.Log.LogDebug($"Keepsake: saved a copy of {saved} kept file(s).");
+            var waiting = WaitingFor(path);
+            if (waiting == null) return "that file is not waiting for an answer";
+
+            waiting.PutBack = true;
+            return SessionFile.Write(Session) ? null : "keepsake.session could not be saved, see the log";
+        }
+
+        /// <summary>The file as it is now becomes yours: its copy is made from it, and it no longer waits.</summary>
+        public static string KeepCurrent(string path)
+        {
+            var waiting = WaitingFor(path);
+            if (waiting == null) return "that file is not waiting for an answer";
+            if (!File.Exists(KeptFiles.Live(path))) return "the file is not there to keep";
+
+            KeptFiles.CopyOver(KeptFiles.Live(path), KeptFiles.Copy(path));
+            Session.Waiting.Remove(waiting);
+            return SessionFile.Write(Session) ? null : "keepsake.session could not be saved, see the log";
+        }
+
+        /// <summary>
+        /// As the game closes: a copy of every kept file that changed, and when the game closed, which
+        /// tells the next launch that a file written after it was not written by a mod. Called from
+        /// each hook the game gives on the way out, so the last one to run stamps the latest time.
+        /// </summary>
+        /// <param name="by">Which hook called, recorded for the log.</param>
+        public static void Close(string by, DateTime? at = null)
+        {
+            Load();
+            if (_unreadable) return;
+            var session = Session;
+
+            // The file is only there while something is kept.
+            if (Kept.Count == 0)
+            {
+                if (session != null && File.Exists(SessionFile.FilePath)) File.Delete(SessionFile.FilePath);
+                return;
+            }
+
+            var saved = KeptFiles.Save(Kept, p => session?.WaitingFor(p) != null);
+            if (saved > 0) Plugin.Log?.LogDebug($"Keepsake: saved a copy of {saved} kept file(s).");
+
+            // Without the file, the next launch takes this game as one it did not see close.
+            if (session == null) return;
+            session.Closed = at ?? DateTime.UtcNow;
+            session.ClosedBy = by;
+            SessionFile.Write(session);
         }
 
         /// <summary>
@@ -169,9 +225,9 @@ namespace Keepsake
 
             items.AddRange(folders.Values);
             return items
-                .OrderBy(i => i.IsFolder ? i.Path : i.Parent, StringComparer.OrdinalIgnoreCase)
+                .OrderBy(i => i.IsFolder ? i.Path : i.Parent, NaturalOrder.IgnoreCase)
                 .ThenBy(i => i.IsFolder ? 0 : 1)
-                .ThenBy(i => i.Path, StringComparer.OrdinalIgnoreCase)
+                .ThenBy(i => i.Path, NaturalOrder.IgnoreCase)
                 .ToList();
         }
 
@@ -188,7 +244,8 @@ namespace Keepsake
         {
             _kept = null;
             _unreadable = false;
-            _saveAt = 0f;
+            _session = null;
+            _sessionUnreadable = false;
         }
     }
 }
