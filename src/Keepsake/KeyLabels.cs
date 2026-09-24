@@ -24,7 +24,7 @@ namespace Keepsake
 
         /// <summary>
         /// A setting's value as it is shown: a keybind in the keyboard's labels, modifiers first,
-        /// anything else as it is stored.
+        /// anything else as it is stored. A key pressed alone on a KeyCode setting is its label.
         /// </summary>
         public static string Shown(Setting setting, string value)
         {
@@ -38,7 +38,10 @@ namespace Keepsake
                 var shortcut = KeyboardShortcut.Deserialize(value);
                 if (shortcut.MainKey == KeyCode.None) return value;
 
-                return string.Join(" + ", shortcut.Modifiers.Select(Of).Concat(new[] { Of(shortcut.MainKey) }).ToArray());
+                // Modifiers in KeyCode order, as Bindrune writes them, so one shortcut reads the
+                // same in both.
+                return string.Join(" + ", shortcut.Modifiers.Distinct().OrderBy(k => (int)k).Select(Of)
+                    .Concat(new[] { Of(shortcut.MainKey) }).ToArray());
             }
             catch (Exception)
             {
