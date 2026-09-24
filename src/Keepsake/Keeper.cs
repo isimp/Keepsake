@@ -1,6 +1,8 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
 using BepInEx.Configuration;
 using UnityEngine;
 
@@ -18,6 +20,7 @@ namespace Keepsake
     /// Lookups use what is in memory. The file is read again, if it was edited, only at the points
     /// that call Sync: opening the panel, and before every write, so a hand edit is never written
     /// over. Checking the file on every lookup would cost a file system call per listed row.
+    /// Changes followed from elsewhere are written together once they stop coming (see Tick).
     /// </summary>
     public static class Keeper
     {
@@ -31,8 +34,8 @@ namespace Keepsake
         /// <summary>True while Keepsake writes a setting itself, which is not a change to follow.</summary>
         private static bool _writing;
 
-        /// <summary>Called when a setting changed elsewhere, so an open panel can redraw.</summary>
-        public static Action Changed;
+        /// <summary>Called with a setting's id when it changed elsewhere, so an open panel can redraw.</summary>
+        public static Action<string> Changed;
 
         public static IReadOnlyList<Pin> Pins
         {
@@ -66,6 +69,13 @@ namespace Keepsake
             _pins = read;
             _stamp = stamp;
             Index();
+
+            // Values followed since the last write are newer than the file.
+            foreach (var id in Pending.Keys.ToList())
+            {
+                if (_byId.TryGetValue(id, out var pin)) pin.Value = Pending[id];
+                else Pending.Remove(id);
+            }
 
             if (_keptAtLaunch == null) _keptAtLaunch = new HashSet<string>(_byId.Keys);
         }
@@ -149,21 +159,44 @@ namespace Keepsake
         /// Stops keeping the setting and puts the profile's value back, so it reads the way it
         /// will after the next sync anyway.
         /// </summary>
-        public static void Unpin(string id)
+        public static void Unpin(string id) => UnpinAll(new[] { id });
+
+        /// <summary>Releases every one of these settings, in one write. Returns how many were kept.</summary>
+        public static int UnpinAll(IEnumerable<string> ids)
         {
             Sync();
-            var pin = Find(id);
-            if (pin == null) return;
 
-            _pins.Remove(pin);
+            var released = new List<Pin>();
+            foreach (var id in ids)
+            {
+                var pin = Find(id);
+                if (pin == null) continue;
+
+                _pins.Remove(pin);
+                _byId.Remove(id);
+                released.Add(pin);
+            }
+
+            if (released.Count == 0) return 0;
             Save();
-            if (pin.Profile != null) Released[id] = pin.Profile;
-            Changes.Remove(id);
 
-            // A keybind Bindrune looks after is its to set, so releasing one only lets go of it.
-            var setting = SettingIndex.Find(id);
-            if (setting != null && !setting.LeftToBindrune && pin.Profile != null && setting.Current != pin.Profile)
-                Write(setting, pin.Profile);
+            var answered = false;
+            foreach (var pin in released)
+            {
+                if (pin.Profile != null) Released[pin.Id] = pin.Profile;
+                answered |= Changes.Waiting.RemoveAll(c => c.Id == pin.Id) > 0;
+                answered |= Changes.Quiet.RemoveAll(q => q.Id == pin.Id) > 0;
+
+                // A keybind Bindrune looks after is its to set, so releasing one only lets go of
+                // it. A setting no mod has bound has nothing to write to; its cfg file keeps your
+                // value until the next profile sync.
+                var setting = SettingIndex.Find(pin.Id);
+                if (setting != null && !setting.LeftToBindrune && pin.Profile != null && setting.Current != pin.Profile)
+                    Write(setting, pin.Profile);
+            }
+
+            if (answered) SaveChanges();
+            return released.Count;
         }
 
         public const string BindruneKeepsKeys = "Bindrune keeps your keybinds. Set this key as yours in Bindrune to keep it.";
@@ -197,38 +230,85 @@ namespace Keepsake
             Save();
 
             // Choosing a value here is an answer to a profile change as much as Keep mine is.
-            Changes.Remove(setting.Id);
+            Answered(setting.Id);
             return null;
         }
 
         // ---------- the profile's changes ----------
 
-        private static Dictionary<string, ProfileChange> _changes;
+        private static ChangeState _changes;
+        private static bool _changesUnreadable;
 
         /// <summary>
-        /// Kept settings whose profile's value changed since the last launch, by id: found by the
-        /// preloader, or by Reconcile for a value it had to put in later. For this session only.
+        /// Kept settings whose profile's value changed while you kept your own, waiting for an
+        /// answer, found by the preloader or by Reconcile for a value it had to put in later; and
+        /// the settings made quiet, whose changes are not asked about. Read from keepsake.changes
+        /// once, and written back whenever either changes.
         /// </summary>
-        private static Dictionary<string, ProfileChange> Changes
+        private static ChangeState Changes
         {
             get
             {
                 if (_changes != null) return _changes;
-                _changes = new Dictionary<string, ProfileChange>();
-                foreach (var change in ProfileChanges.Take()) _changes[change.Id] = change;
+                var read = ProfileChanges.Read();
+                _changesUnreadable = read == null;
+                _changes = read ?? new ChangeState();
                 return _changes;
             }
         }
 
-        /// <summary>What the profile changed about a kept setting since the last launch, or null.</summary>
+        /// <summary>What the profile changed about a kept setting while you kept yours, or null.</summary>
         public static ProfileChange ProfileChangeOf(string id)
         {
             if (id == null || Find(id) == null) return null;
-            return Changes.TryGetValue(id, out var change) ? change : null;
+            return Changes.Waiting.FirstOrDefault(c => c.Id == id);
         }
 
-        /// <summary>The ids of kept settings whose profile's value changed since the last launch.</summary>
-        public static List<string> ProfileChanged() => Changes.Keys.Where(id => Find(id) != null).ToList();
+        /// <summary>The ids of kept settings whose profile's value changed while you kept yours.</summary>
+        public static List<string> ProfileChanged() => Changes.Waiting.Select(c => c.Id).Where(id => Find(id) != null).ToList();
+
+        /// <summary>Whether the profile's changes to a kept setting are recorded without asking.</summary>
+        public static bool IsQuiet(string id) => id != null && Changes.IsQuiet(id);
+
+        /// <summary>
+        /// Stops or starts asking about the profile's changes to a kept setting. The profile's value
+        /// is recorded either way, so releasing it always puts back the latest one. Making it quiet
+        /// also answers a change waiting for it, keeping your value.
+        /// </summary>
+        public static void SetQuiet(string id, bool quiet)
+        {
+            var pin = Find(id);
+            if (pin == null || IsQuiet(id) == quiet) return;
+
+            if (quiet)
+            {
+                Changes.Quiet.Add(QuietSetting.Of(pin));
+                Changes.Waiting.RemoveAll(c => c.Id == id);
+            }
+            else Changes.Quiet.RemoveAll(q => q.Id == id);
+
+            SaveChanges();
+        }
+
+        private static void NoteChange(Pin pin, string from, string to)
+        {
+            if (ProfileChanges.Merge(Changes, new[] { ProfileChange.Of(pin, from, to) })) SaveChanges();
+        }
+
+        /// <summary>A change answered: it is taken out, and stays out at the next launch.</summary>
+        private static void Answered(string id)
+        {
+            if (Changes.Waiting.RemoveAll(c => c.Id == id) > 0) SaveChanges();
+        }
+
+        private static void SaveChanges()
+        {
+            // Settings still kept are told by the pins in memory, which are not to be trusted while
+            // the pins file cannot be read: every change would look like one of a released setting.
+            if (_changesUnreadable || _unreadable) return;
+            ProfileChanges.KeepOnly(Changes, _byId.Keys);
+            ProfileChanges.Write(Changes);
+        }
 
         /// <summary>Takes the profile's new value as yours, and the setting stays kept.</summary>
         public static string UseProfiles(Setting setting)
@@ -239,7 +319,7 @@ namespace Keepsake
         }
 
         /// <summary>Stays with your value, and the setting no longer shows as changed by the profile.</summary>
-        public static void KeepMine(string id) => Changes.Remove(id);
+        public static void KeepMine(string id) => Answered(id);
 
         /// <summary>
         /// Puts every pin back into the settings that are loaded, for pins the preloader could not
@@ -271,7 +351,7 @@ namespace Keepsake
                 // Whatever the setting holds before your value goes in is the profile's.
                 if (pin.Profile != current)
                 {
-                    if (pin.Profile != null) Changes[pin.Id] = new ProfileChange { Id = pin.Id, From = pin.Profile, To = current };
+                    if (pin.Profile != null) NoteChange(pin, pin.Profile, current);
                     dirty = true;
                 }
                 pin.Profile = current;
@@ -370,41 +450,104 @@ namespace Keepsake
             config.SettingChanged += OnSettingChanged;
         }
 
+        /// <summary>The game's main thread, set as the plugin starts. Zero, as in the tests, counts every thread as main.</summary>
+        public static int MainThread;
+
+        /// <summary>Setting changes raised on another thread, waiting for the main thread. See OnSettingChanged.</summary>
+        private static readonly ConcurrentQueue<ConfigEntryBase> OffThread = new ConcurrentQueue<ConfigEntryBase>();
+
         private static void OnSettingChanged(object sender, SettingChangedEventArgs args)
         {
             if (_writing) return;
 
+            var entry = args?.ChangedSetting;
+            if (entry == null) return;
+
+            // A mod that reloads its cfg file from a file watcher of its own, without handing the
+            // event to the main thread, changes its settings on the watcher's thread. What follows
+            // touches lists the panel reads and asks the game for the time, so it waits for the
+            // main thread, which takes it in at the next Tick.
+            if (MainThread != 0 && Thread.CurrentThread.ManagedThreadId != MainThread)
+            {
+                OffThread.Enqueue(entry);
+                return;
+            }
+
+            FollowChange(entry);
+        }
+
+        private static void FollowChange(ConfigEntryBase entry)
+        {
             try
             {
-                var entry = args?.ChangedSetting;
-                var file = SettingIndex.FileOf(entry?.ConfigFile);
-                if (file == null) return;
+                // Settings seen before carry their id; building it again for every change would
+                // cost a string for a mod that writes a setting every frame.
+                var id = SettingIndex.Find(entry)?.Id;
+                if (id == null)
+                {
+                    var file = SettingIndex.FileOf(entry.ConfigFile);
+                    if (file == null) return;
+                    id = PinFile.IdOf(file, entry.Definition.Section, entry.Definition.Key);
+                }
 
-                var id = PinFile.IdOf(file, entry.Definition.Section, entry.Definition.Key);
                 Session.Touch(id);
-                Changed?.Invoke();
+                Changed?.Invoke(id);
 
-                if (Find(id) == null) return;
+                var pin = Find(id);
+                if (pin == null) return;
 
                 // What Bindrune writes to a keybind is its own choice, not one to keep here.
                 if (SettingIndex.Find(entry)?.LeftToBindrune == true) return;
 
                 var now = entry.GetSerializedValue();
-                if (!PinFile.Storable(now)) return;
+                if (!PinFile.Storable(now) || pin.Value == now) return;
 
-                // A write follows, so take in any hand edit first and look the pin up again.
-                Sync();
-                var pin = Find(id);
-                if (pin == null || pin.Value == now) return;
-
+                // A config manager's slider sets its setting in every frame it moves, so the value
+                // is taken at once and the file is written once the changes stop. See Tick.
                 pin.Value = now;
-                Save();
-                Plugin.Log.LogInfo($"Keepsake: your value for {pin.File} [{pin.Section}] {pin.Key} is now {now}.");
+                Pending[id] = now;
+                _followedSinceTick = true;
             }
             catch (Exception ex)
             {
                 Plugin.WarnOnce($"Keepsake: following a setting change failed: {ex.Message}", ex);
             }
+        }
+
+        /// <summary>Values followed from changes elsewhere and not written to the pins file yet, by id.</summary>
+        private static readonly Dictionary<string, string> Pending = new Dictionary<string, string>();
+
+        /// <summary>How long after the last followed change the pins file is written.</summary>
+        public const float FollowDelay = 1f;
+
+        private static bool _followedSinceTick;
+        private static float _flushAt;
+
+        /// <summary>
+        /// Called every frame with the time. Writes the values followed from changes elsewhere once
+        /// none has come in for FollowDelay seconds.
+        /// </summary>
+        public static void Tick(float now)
+        {
+            while (OffThread.TryDequeue(out var entry)) FollowChange(entry);
+
+            if (_followedSinceTick)
+            {
+                _followedSinceTick = false;
+                _flushAt = now + FollowDelay;
+            }
+
+            if (Pending.Count > 0 && now >= _flushAt) Flush();
+        }
+
+        /// <summary>Writes any followed values still waiting, such as when the game closes.</summary>
+        public static void Flush()
+        {
+            if (Pending.Count == 0) return;
+
+            // Takes in any hand edit first; Sync puts the waiting values back on top of it.
+            Sync();
+            Save();
         }
 
         private static void Write(Setting setting, string serialized)
@@ -438,8 +581,14 @@ namespace Keepsake
                 return;
             }
 
-            PinFile.Write(_pins);
+            if (!PinFile.Write(_pins)) return;
             _stamp = PinFile.Stamp();
+
+            // Every value in memory is in the file now, followed ones included.
+            foreach (var id in Pending.Keys)
+                if (_byId.TryGetValue(id, out var pin))
+                    Plugin.Log.LogInfo($"Keepsake: your value for {pin.File} [{pin.Section}] {pin.Key} is now {pin.Value}.");
+            Pending.Clear();
         }
 
         /// <summary>Forgets everything, as at launch. For the tests, which run many launches in one process.</summary>
@@ -455,7 +604,13 @@ namespace Keepsake
             _keptAtLaunch = null;
             Released.Clear();
             _changes = null;
+            _changesUnreadable = false;
+            Pending.Clear();
+            _followedSinceTick = false;
+            _flushAt = 0f;
             Changed = null;
+            while (OffThread.TryDequeue(out _)) { }
+            MainThread = 0;
         }
 
         private static void Index()

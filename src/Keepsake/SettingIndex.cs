@@ -122,7 +122,12 @@ namespace Keepsake
         public static Setting Find(ConfigEntryBase entry) => entry != null && ByEntry.TryGetValue(entry, out var setting) ? setting : null;
 
         /// <summary>Whether Bindrune is loaded this session.</summary>
-        public static bool BindruneLoaded =>
+        public static bool BindruneLoaded => IsBindruneLoaded();
+
+        /// <summary>Asks the plugin loader; the tests answer for themselves, having no plugins.</summary>
+        internal static Func<bool> IsBindruneLoaded = BindruneInLoader;
+
+        private static bool BindruneInLoader() =>
             Chainloader.PluginInfos.TryGetValue(BindruneLink.Guid, out var info) && info?.Instance != null;
 
         /// <summary>The file a loaded config lives in, relative to BepInEx/config, or null.</summary>
@@ -158,9 +163,15 @@ namespace Keepsake
             }
         }
 
+        /// <summary>How long the last refresh took, and whether it had to sort the settings again.</summary>
+        public static double LastRefreshMs { get; private set; }
+        public static bool LastRefreshSorted { get; private set; }
+
         public static void Refresh()
         {
+            var clock = System.Diagnostics.Stopwatch.StartNew();
             var all = new List<Setting>();
+            var found = false;
             ById.Clear();
 
             foreach (var source in Sources())
@@ -211,6 +222,7 @@ namespace Keepsake
 
                         ByEntry[entry] = setting;
                         SettingFound?.Invoke(setting);
+                        found = true;
                     }
 
                     if (ById.ContainsKey(setting.Id)) continue;
@@ -219,6 +231,17 @@ namespace Keepsake
                 }
             }
 
+            // Mods bind their settings once, so most refreshes find what the last one did, already
+            // in order. Only a new setting, or one gone, needs the sort and the lists built from it.
+            LastRefreshSorted = found || all.Count != All.Count;
+            if (LastRefreshSorted) Arrange(all);
+
+            clock.Stop();
+            LastRefreshMs = clock.Elapsed.TotalMilliseconds;
+        }
+
+        private static void Arrange(List<Setting> all)
+        {
             All = all
                 .OrderBy(s => s.ModName, StringComparer.OrdinalIgnoreCase)
                 .ThenBy(s => s.Section, StringComparer.OrdinalIgnoreCase)
@@ -245,6 +268,7 @@ namespace Keepsake
         internal static void Reset()
         {
             Sources = Loaded;
+            IsBindruneLoaded = BindruneInLoader;
             ById.Clear();
             ByEntry.Clear();
             Files.Clear();

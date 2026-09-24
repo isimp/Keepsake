@@ -20,12 +20,13 @@ namespace Keepsake.UI
 
         private static Text _headerTitle;
         private static Text _headerInfo;
-        private static GameObject _keepAllButton;
+        private static GameObject _headerButton;
 
-        /// <summary>What Keep all keeps: the listed changes that can be kept.</summary>
+        /// <summary>What the header button acts on: the listed changes that can be kept, or the kept settings not loaded.</summary>
         private static List<Setting> _keepable = new List<Setting>();
+        private static List<string> _unloaded = new List<string>();
 
-        private const float KeepAllWidth = 150f;
+        private const float HeaderButtonWidth = 220f;
 
         private static VirtualList<SourceItem, SourceView> _sourceList;
         private static VirtualList<SettingItem, SettingView> _settingList;
@@ -35,6 +36,8 @@ namespace Keepsake.UI
         private static int _redraws;
         private static double _slowestMs;
         private static int _slowestCount;
+        private static double _firstMs;
+        private static int _firstCount;
 
         /// <summary>A row in the middle: a loaded setting, or a kept one whose mod has not bound it.</summary>
         private sealed class Row
@@ -118,9 +121,16 @@ namespace Keepsake.UI
             infoRect.offsetMin = new Vector2(12f, 4f);
             infoRect.offsetMax = new Vector2(-12f, 24f);
 
-            _keepAllButton = Button("Keep all", strip.transform, KeepAllWidth, 32f, KeepAll);
-            AnchorRight(_keepAllButton, -10f, -HeaderHeight / 2f);
-            _keepAllButton.SetActive(false);
+            _headerButton = Button("", strip.transform, HeaderButtonWidth, 32f, HeaderAction);
+            AnchorRight(_headerButton, -10f, -HeaderHeight / 2f);
+            _headerButton.SetActive(false);
+        }
+
+        /// <summary>The header button: Keep all over the changes, Release not loaded over the kept settings.</summary>
+        private static void HeaderAction()
+        {
+            if (_source == Source.Kept) ReleaseUnloaded();
+            else KeepAll();
         }
 
         /// <summary>Keeps every change listed that can be kept, each at the value it has now.</summary>
@@ -135,25 +145,51 @@ namespace Keepsake.UI
             }, Sfx.Kept, () => $"{Plural(kept, "setting")} kept at {(kept == 1 ? "its value" : "their values")}. A profile sync leaves {(kept == 1 ? "it" : "them")} alone now.");
         }
 
-        /// <summary>Shows Keep all over a list of changes with something to keep, and makes room for it.</summary>
-        private static void UpdateKeepAll(List<Row> rows)
+        /// <summary>
+        /// Releases every kept setting listed that no mod has bound, such as those of a mod that
+        /// is gone or renamed them. Nothing is written back for them, since nothing holds them.
+        /// </summary>
+        private static void ReleaseUnloaded()
+        {
+            var ids = _unloaded.ToList();
+            var released = 0;
+            _selectedId = null;
+            Act(() =>
+            {
+                released = Keeper.UnpinAll(ids);
+                return released > 0 ? null : "Nothing could be released.";
+            }, Sfx.Released, () => $"{Plural(released, "setting")} no longer kept, and no longer put back at launch.");
+        }
+
+        /// <summary>
+        /// Shows the header button over a list it has something to do in, and makes room for it.
+        /// Kept settings not loaded are only offered once a world is up, since some mods bind
+        /// settings only then and would look gone at the start menu.
+        /// </summary>
+        private static void UpdateHeaderButton(List<Row> rows)
         {
             _keepable = _source == Source.Changed
                 ? rows.Select(r => r.Setting).Where(Keeper.CanPin).ToList()
                 : new List<Setting>();
+            _unloaded = _source == Source.Kept && Player.m_localPlayer != null
+                ? rows.Where(r => r.Setting == null).Select(r => r.Id).ToList()
+                : new List<string>();
 
-            var shown = _keepable.Count > 0;
-            if (_keepAllButton != null)
+            var text = _keepable.Count > 0 ? $"Keep all ({_keepable.Count})"
+                : _unloaded.Count > 0 ? $"Release not loaded ({_unloaded.Count})"
+                : null;
+
+            if (_headerButton != null)
             {
-                _keepAllButton.SetActive(shown);
-                var label = _keepAllButton.GetComponentInChildren<Text>();
-                if (label != null) label.text = $"Keep all ({_keepable.Count})";
+                _headerButton.SetActive(text != null);
+                var label = _headerButton.GetComponentInChildren<Text>();
+                if (label != null && text != null) label.text = text;
             }
 
-            var right = shown ? -(KeepAllWidth + 22f) : -12f;
-            foreach (var text in new[] { _headerTitle, _headerInfo })
+            var right = text != null ? -(HeaderButtonWidth + 22f) : -12f;
+            foreach (var line in new[] { _headerTitle, _headerInfo })
             {
-                var rect = (RectTransform)text.transform;
+                var rect = (RectTransform)line.transform;
                 rect.offsetMax = new Vector2(right, rect.offsetMax.y);
             }
         }
@@ -161,7 +197,7 @@ namespace Keepsake.UI
         private static void UpdateHeader(List<Row> rows, bool searching)
         {
             if (_headerTitle == null || _headerInfo == null) return;
-            UpdateKeepAll(rows);
+            UpdateHeaderButton(rows);
 
             var mods = rows.Select(r => r.ModName).Distinct().Count();
             var across = $"{Plural(rows.Count, "setting")} in {Plural(mods, "mod")}";
@@ -190,8 +226,8 @@ namespace Keepsake.UI
                 case Source.ProfileChanged:
                     _headerTitle.text = "Profile changed";
                     _headerInfo.text = rows.Count == 0
-                        ? "Kept settings whose profile's value changed since the last launch"
-                        : $"{across} kept at your value, whose profile's value changed since the last launch";
+                        ? "Kept settings whose profile's value changed while you kept yours"
+                        : $"{across} kept at your value, whose profile's value changed since you kept it";
                     break;
 
                 case Source.Changed:
@@ -285,10 +321,17 @@ namespace Keepsake.UI
                     "This mod has no settings.";
 
             clock.Stop();
-            _redraws++;
-            if (clock.Elapsed.TotalMilliseconds > _slowestMs)
+            var ms = clock.Elapsed.TotalMilliseconds;
+
+            // The first redraw after opening also creates the rows, so it is kept apart from the rest.
+            if (_redraws++ == 0)
             {
-                _slowestMs = clock.Elapsed.TotalMilliseconds;
+                _firstMs = ms;
+                _firstCount = matched.Count;
+            }
+            else if (ms > _slowestMs)
+            {
+                _slowestMs = ms;
                 _slowestCount = matched.Count;
             }
         }
@@ -522,7 +565,11 @@ namespace Keepsake.UI
             view.Value.color = differs || kept ? Color.white : Dim;
 
             view.Tag.text = row.Setting == null ? "not loaded"
-                : kept ? (row.Setting.LeftToBindrune ? "waiting" : Keeper.ProfileChangeOf(row.Id) != null ? "updated" : "kept")
+                : kept ? (row.Setting.LeftToBindrune ? "waiting"
+                    : Keeper.ProfileChangeOf(row.Id) != null ? "updated"
+                    : pin.Profile != null && pin.Profile == pin.Value ? "same"
+                    : Keeper.IsQuiet(row.Id) ? "quiet"
+                    : "kept")
                 : Session.IsChanged(row.Setting) ? "changed" : "";
             view.Tag.color = kept ? Kept : Dim;
         }

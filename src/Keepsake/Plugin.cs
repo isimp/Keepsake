@@ -41,6 +41,7 @@ namespace Keepsake
 
         private ConfigEntry<KeyboardShortcut> _openKey;
         private static ConfigEntry<bool> _playSounds;
+        private ConfigEntry<bool> _profileChangeNotice;
         private static ConfigEntry<float> _panelWidth;
         private static ConfigEntry<float> _panelHeight;
 
@@ -66,6 +67,7 @@ namespace Keepsake
         private void Awake()
         {
             Log = Logger;
+            Keeper.MainThread = System.Threading.Thread.CurrentThread.ManagedThreadId;
             PinFile.Log = Logger;
             SettingIndex.FileFound = Keeper.Follow;
             SettingIndex.SettingFound = Session.Note;
@@ -80,6 +82,8 @@ namespace Keepsake
                     new AcceptableValueRange<float>(560f, 2160f)));
             _playSounds = Config.Bind("Panel", "PlaySounds", true,
                 "Play the game's interface sounds when the panel opens and closes, and when a setting is kept, released or given a new value.");
+            _profileChangeNotice = Config.Bind("General", "ProfileChangeNotice", true,
+                "Say on screen, once your character appears, when the profile changed values you keep and those changes wait for an answer in the panel.");
 
             var harmony = new Harmony(Guid);
             StartMenuKeys.Patch(harmony);
@@ -89,15 +93,43 @@ namespace Keepsake
 
         private void OnDestroy()
         {
-            KeepsakePanel.Close(quietly: true);
+            // Your values first: closing the panel as the game shuts down may fail with the GUI
+            // already gone.
+            FlushQuietly();
+
+            try
+            {
+                KeepsakePanel.Close(quietly: true);
+            }
+            catch (Exception ex)
+            {
+                WarnOnce($"Keepsake: closing the panel failed: {ex.Message}", ex);
+            }
+        }
+
+        private void OnApplicationQuit() => FlushQuietly();
+
+        /// <summary>Writes the values followed from a config manager that are still waiting, before the game closes.</summary>
+        private static void FlushQuietly()
+        {
+            try
+            {
+                Keeper.Flush();
+            }
+            catch (Exception ex)
+            {
+                WarnOnce($"Keepsake: saving your latest values failed: {ex.Message}", ex);
+            }
         }
 
         private void Update()
         {
             try
             {
+                Keeper.Tick(Time.realtimeSinceStartup);
                 ReconcileOnce();
                 CheckWaitingOnce();
+                NoticeProfileChangesOnce();
 
                 // While a key is being set, every key belongs to that, the open key and Escape too.
                 if (KeyCapture.Active)
@@ -127,6 +159,39 @@ namespace Keepsake
 
         private bool _waitingChecked;
         private float _waitingCheckAt;
+
+        private bool _noticeShown;
+        private float _noticeAt;
+
+        /// <summary>
+        /// Profile changes to kept settings show only in the panel, so once a session, a few
+        /// seconds after your character appears and the kept values bound late are in place, a
+        /// line in the corner says how many wait for an answer.
+        /// </summary>
+        private void NoticeProfileChangesOnce()
+        {
+            if (_noticeShown || Player.m_localPlayer == null || MessageHud.instance == null) return;
+
+            if (_noticeAt == 0f) _noticeAt = Time.realtimeSinceStartup + 5f;
+            if (Time.realtimeSinceStartup < _noticeAt) return;
+            _noticeShown = true;
+
+            if (!_profileChangeNotice.Value) return;
+
+            var count = Keeper.ProfileChanged().Count;
+            if (count == 0) return;
+
+            MessageHud.instance.ShowMessage(MessageHud.MessageType.TopLeft,
+                $"Keepsake: the profile changed {(count == 1 ? "a value" : count + " values")} you keep. Press {OpenKeyLabel()} to look.");
+        }
+
+        /// <summary>The open key as the keyboard labels it, modifiers first.</summary>
+        private string OpenKeyLabel()
+        {
+            var shortcut = _openKey.Value;
+            return string.Join(" + ", shortcut.Modifiers.OrderBy(k => (int)k).Select(KeyLabels.Of)
+                .Concat(new[] { KeyLabels.Of(shortcut.MainKey) }).ToArray());
+        }
 
         /// <summary>
         /// Keybinds kept here before Bindrune was installed wait for Bindrune to take them over,

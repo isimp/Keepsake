@@ -8,15 +8,15 @@ A profile sync in a mod manager such as Gale uploads everything under `BepInEx/c
 
 Keepsake has two parts.
 
-`Keepsake.Preloader.dll` is a BepInEx preloader patcher. It patches nothing: BepInEx calls `Initialize` on every patcher before any plugin loads, and that is all it uses. It reads `BepInEx/keepsake.pins` and writes each kept value into its mod's cfg file, replacing only that one line and leaving comments, order and line endings as they were. The file is written aside and swapped in, so an interrupted write leaves the old file; a copy left aside that way is removed at the next launch, since under `BepInEx/config` a profile owner's sync would upload it. Because this happens before any plugin exists, a mod reads your value from its own file whether it reads the setting once in `Awake` or every frame. The order in which BepInEx loads plugins follows their dependencies and is otherwise not something one plugin controls, which is why this is a patcher rather than part of the plugin.
+`Keepsake.Preloader.dll` is a BepInEx preloader patcher. It patches nothing: BepInEx calls `Initialize` on every patcher before any plugin loads, and that is all it uses. It reads `BepInEx/keepsake.pins` and writes each kept value into its mod's cfg file, replacing only that one line and leaving comments, order and line endings as they were. The file is written aside and swapped in, so an interrupted write leaves the old file; a copy left aside that way beside a kept setting's cfg file or Keepsake's own files is removed at the next launch, since under `BepInEx/config` a profile owner's sync would upload it. Only those names are checked, not every file in the profile. Because this happens before any plugin exists, a mod reads your value from its own file whether it reads the setting once in `Awake` or every frame. The order in which BepInEx loads plugins follows their dependencies and is otherwise not something one plugin controls, which is why this is a patcher rather than part of the plugin.
 
 Whatever value the preloader replaces is recorded as the profile's value. Releasing a setting puts that value back.
 
-When the value it replaces is not the profile's value it recorded last time, the profile changed it since the last launch. The preloader hands those changes to the plugin in memory, through the application domain both run in, and the panel shows them for that session. Nothing about them is written to disk, so `keepsake.pins` keeps its format. A cfg file that holds your value tells nothing about the profile, since it looks the same whether no sync happened or the profile moved to your value, so a profile change to exactly your value is not seen.
+When the value it replaces is not the profile's value it recorded last time, the profile changed it while you kept yours. The preloader adds each such change to `BepInEx/keepsake.changes`, where it waits until you answer it in the panel, so one found in a session where the panel stayed shut is still there the next time. A setting that changes again keeps the value the profile had before its first change, and drops out if the profile goes back to it. A setting made quiet is not added: its profile value is still recorded, so Release puts back the latest one, but you are not asked about it, which suits values the profile's owner moves all the time, such as a volume or a window size. A quiet setting is tagged quiet in the lists, and a kept setting whose value is the profile's, which keeping changes nothing about for now, is tagged same. Releasing a setting forgets that it was quiet. Once your character appears, a line in the corner says how many changes wait, once a session; `ProfileChangeNotice` turns that off. The pins file keeps its format, since Bindrune reads it too. A cfg file that holds your value tells nothing about the profile, since it looks the same whether no sync happened or the profile moved to your value, so a profile change to exactly your value is not seen.
 
 `Keepsake.dll` is the plugin. Once every plugin has loaded, it reads the settings of every plugin whose cfg file sits under `BepInEx/config`, puts in any kept value the preloader could not place because the file or the line did not exist yet, and subscribes to each file's `SettingChanged`. A second pass runs shortly after a character first spawns if some kept settings were still missing, since some mods bind settings only when a world loads, and opening the panel runs it again.
 
-When a kept setting changes while the game runs, through a config manager or the mod itself, the kept value follows, so it always holds your latest choice. Values are compared and stored in their serialized form, the text the cfg file holds.
+When a kept setting changes while the game runs, through a config manager or the mod itself, the kept value follows, so it always holds your latest choice. The new value is taken at once and written to the pins file once the changes stop for a second, and when the game closes: a config manager's slider sets its setting in every frame it moves. A mod that reloads its cfg file from a file watcher of its own may change its settings on that watcher's thread; such a change is taken in on the game's main thread at the next frame. Values are compared and stored in their serialized form, the text the cfg file holds.
 
 ## Server-synced settings
 
@@ -26,7 +26,7 @@ ServerSync and Jotunn both hand a server's value to a setting while you are conn
 
 Bindrune keeps keybinds of its own through profile syncs, so where both are installed they would otherwise keep the same setting twice, and what it ends up as would depend on which wrote last. Instead a keybind, meaning a setting of type `KeyCode` or `KeyboardShortcut`, has one keeper:
 
-While Bindrune is installed, keybinds are Bindrune's. Keepsake shows them but does not keep, write or follow them: the preloader skips them, telling a keybind by the `# Setting type:` note BepInEx writes above each setting and Bindrune by `Bindrune.dll` under `BepInEx/plugins` (a mod manager disables a mod by renaming its files, so a disabled Bindrune does not count). A keybind kept here before Bindrune was installed waits in the Kept list until Bindrune takes it over: Bindrune makes it your own key there, with the key recorded here as the profile's, and removes its line from `keepsake.pins`.
+While Bindrune is installed, keybinds are Bindrune's. Keepsake shows them but does not keep, write or follow them: the preloader skips them, telling a keybind by the `# Setting type:` note BepInEx writes above each setting and Bindrune by `Bindrune.dll` under `BepInEx/plugins` (a mod manager disables a mod by renaming its files, so a disabled Bindrune does not count). It looks for Bindrune only when a kept setting is a keybind, first where a mod manager or a hand install puts it, the plugins folder and one folder down, and only then through the whole folder, which takes a tenth of a second on a large profile. A keybind kept here before Bindrune was installed waits in the Kept list until Bindrune takes it over: Bindrune makes it your own key there, with the key recorded here as the profile's, and removes its line from `keepsake.pins`.
 
 While Bindrune is not installed, keybinds are kept here like any other setting. The keys Bindrune holds as yours are then applied by nothing, so the panel offers to take them over. That only happens when asked: Keepsake reads `BepInEx/bindrune.keys` and keeps each key that is in use there, for settings that are loaded and not kept here already, and leaves Bindrune's file as it is. If Bindrune comes back, it takes those keys over again.
 
@@ -49,15 +49,19 @@ One known gap: a Jotunn button that is backed by a setting but bound to a gamepa
 
 The left column lists your kept settings, the settings changed since the game started, and every mod. The middle column lists the chosen place's settings under their sections, with a bar on values that differ from the mod's default, and the right column shows the selected setting's description, default, allowed values and, once kept, its editor. The search runs over mod names, file names, sections, setting names and descriptions.
 
-Both lists create rows only for what is on screen and reuse them while scrolling, so the number of settings does not affect how fast the panel draws. Settings changed while the panel is open redraw it at most twice a second.
+Both lists create rows only for what is on screen and reuse them while scrolling, so the number of settings does not affect how fast the panel draws. Settings changed while the panel is open redraw the lists at most twice a second, and the right column only when the change is to the setting shown there, so an open dropdown stays open. Opening the panel reads every mod's settings again, and sorts them again only when a mod added or dropped one; the first time in a session, the log says how long opening took, apart from the first drawing of the lists, which also creates their rows.
 
 A setting counts as changed this session when it differs from the value it had when Keepsake first saw it. Changes Keepsake makes itself do not count. Keep all, over that list, keeps every setting in it that is not kept yet, each at its current value and with its value at launch as the profile's, in one write.
 
-Profile changed, on the left while there are any, lists the kept settings whose profile's value changed since the last launch. Each one stays there until you take the profile's value (the setting stays kept, at that value), stay with yours, give it another value, or release it.
+Profile changed, on the left while there are any, lists the kept settings whose profile's value changed while you kept yours. Each one stays there, across launches, until you take the profile's value (the setting stays kept, at that value), stay with yours, give it another value, or release it.
+
+Release not loaded, over the kept settings once a world is up, releases every kept setting no loaded mod has bound, such as those of a mod that was removed or renamed them. It is not offered at the start menu, since some mods bind their settings only when a world loads.
 
 ## Files
 
 `BepInEx/keepsake.pins` holds the kept settings, one per line, tab separated: the cfg file relative to `BepInEx/config`, the section, the setting, your value, and the profile's value. The last field may be left off when adding a line by hand; it is filled in on the next launch. The file may be edited while the game runs; it is read again when the panel opens and before Keepsake writes to it.
+
+`BepInEx/keepsake.changes` holds, under `[changes]`, the profile changes waiting for an answer, one per line, tab separated: the cfg file, the section, the setting, the profile's value before and its value now; and under `[quiet]` the kept settings whose changes are recorded without asking: the cfg file, the section and the setting. It is removed when it would hold nothing. Like the pins file it sits outside `config`, with an extension no profile sync picks up.
 
 Keepsake's own settings are in `BepInEx/config/isimp.Keepsake.cfg`.
 
@@ -73,7 +77,7 @@ The preloader also runs on a dedicated server if installed there, and does nothi
 
 ## Tests
 
-`tests/Keepsake.Tests` covers what needs no game: the pins file, the cfg text the preloader rewrites, both files shared with Bindrune, checked against the samples in `tests/contract`, the preloader's pass over a temporary profile, and keeping, releasing, setting and following values on real BepInEx settings. The plugin class needs the game, so the tests stand in for it with `PluginShim.cs`, and hand their own settings to `SettingIndex` in place of the loaded plugins. The tests run on .NET 8 against the real `BepInEx.dll` of a local profile, which is not part of the repository, so they run locally rather than on the build server:
+`tests/Keepsake.Tests` covers what needs no game: the pins file, the cfg text the preloader rewrites, both files shared with Bindrune, checked against the samples in `tests/contract`, the preloader's pass over a temporary profile, keeping, releasing, setting and following values on real BepInEx settings, and keybinds with and without Bindrune loaded. The plugin class needs the game, so the tests stand in for it with `PluginShim.cs`, and hand their own settings to `SettingIndex` in place of the loaded plugins, and say themselves whether Bindrune is loaded. The tests run on .NET 8 against the real `BepInEx.dll` of a local profile, which is not part of the repository, so they run locally rather than on the build server:
 
 ```
 dotnet test tests/Keepsake.Tests
@@ -81,7 +85,7 @@ dotnet test tests/Keepsake.Tests
 
 `.githooks/pre-push` runs them before every push and stops the push when one fails; without a local `BepInEx.dll` it lets the push through with a warning. Git uses it once told to, per clone: `git config core.hooksPath .githooks`.
 
-The parts that touch the running game (telling whether Bindrune is loaded, keybinds while it is, the panel) are not covered and are checked in game.
+The parts that touch the running game (telling whether Bindrune is loaded, the panel, the notice on screen) are not covered and are checked in game.
 
 ## Building
 

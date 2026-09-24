@@ -44,9 +44,16 @@ namespace Keepsake
         {
             try
             {
-                return Directory.Exists(Paths.PluginPath) &&
-                       Directory.GetFiles(Paths.PluginPath, DllName, SearchOption.AllDirectories)
-                           .Any(f => string.Equals(Path.GetFileName(f), DllName, StringComparison.OrdinalIgnoreCase));
+                var root = Paths.PluginPath;
+                if (!Directory.Exists(root)) return false;
+
+                // Where a mod manager or a hand install puts it: the plugins folder or one folder
+                // down. Walking the whole tree costs a tenth of a second on a large profile.
+                if (File.Exists(Path.Combine(root, DllName))) return true;
+                if (Directory.GetDirectories(root).Any(dir => File.Exists(Path.Combine(dir, DllName)))) return true;
+
+                return Directory.GetFiles(root, DllName, SearchOption.AllDirectories)
+                    .Any(f => string.Equals(Path.GetFileName(f), DllName, StringComparison.OrdinalIgnoreCase));
             }
             catch (Exception ex)
             {

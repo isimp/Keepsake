@@ -10,7 +10,7 @@ namespace Keepsake.UI
     {
         Kept,
 
-        /// <summary>Kept settings whose profile's value changed since the last launch. Offered while there are any.</summary>
+        /// <summary>Kept settings whose profile's value changed while you kept yours. Offered while any wait for an answer.</summary>
         ProfileChanged,
 
         Changed,
@@ -135,8 +135,12 @@ namespace Keepsake.UI
                 return;
             }
 
+            var clock = System.Diagnostics.Stopwatch.StartNew();
+
             // Mods bind settings at different times, so every open reads them again.
             Keeper.Reconcile();
+            _refreshMs = SettingIndex.LastRefreshMs;
+            _refreshSorted = SettingIndex.LastRefreshSorted;
             Keeper.Changed = OnChangedElsewhere;
             KeyCapture.Changed = ShowDetail;
             RefreshBindruneKeys();
@@ -145,11 +149,19 @@ namespace Keepsake.UI
             _note = null;
             _redraws = 0;
             _slowestMs = 0;
+            _slowestCount = 0;
             Build();
             GUIManager.BlockInput(true);
+            _openMs = clock.Elapsed.TotalMilliseconds;
 
             if (_root != null) Sfx.Play(Sfx.PanelOpen);
         }
+
+        // What opening the panel cost, logged when it closes.
+        private static double _openMs;
+        private static double _refreshMs;
+        private static bool _refreshSorted;
+        private static bool _timingLogged;
 
         /// <param name="quietly">For the game shutting down, which is no moment to play a sound.</param>
         public static void Close(bool quietly = false)
@@ -172,9 +184,17 @@ namespace Keepsake.UI
             _bindruneButton = null;
             _repopulateAt = 0f;
 
-            if (_redraws > 0)
-                Plugin.Log.LogDebug($"Keepsake: {_redraws} list redraws while the panel was open, the slowest " +
-                                   $"{_slowestMs:0.0} ms with {_slowestCount} settings listed.");
+            // The first time in a session at Info, where a default log file records it; after that
+            // at Debug, so an often opened panel does not fill the log.
+            var timing = $"Keepsake: the panel opened in {_openMs:0.0} ms, {_refreshMs:0.0} ms of it reading every mod's " +
+                         $"settings{(_refreshSorted ? " and sorting them" : "")} and {_firstMs:0.0} ms drawing the lists and " +
+                         $"their rows for {_firstCount} settings" +
+                         (_redraws > 1
+                             ? $"; {_redraws - 1} redraws after that, the slowest {_slowestMs:0.0} ms with {_slowestCount} settings."
+                             : ".");
+            if (_timingLogged) Plugin.Log.LogDebug(timing);
+            else Plugin.Log.LogInfo(timing);
+            _timingLogged = true;
         }
 
         public static void Tick()
@@ -190,15 +210,17 @@ namespace Keepsake.UI
 
             if (_repopulateAt <= 0f || Time.realtimeSinceStartup < _repopulateAt) return;
 
-            // A redraw replaces the value field you are typing in, so one asked for by a change
-            // elsewhere waits until you are done. The search field is not replaced by a redraw.
-            if (Typing && !_search.isFocused)
+            // A redraw of the detail column replaces the value field you are typing in, so one
+            // waits until you are done. The lists and the search field are not replaced.
+            var detail = !_listsOnly || _detailStale;
+            if (detail && Typing && !_search.isFocused)
             {
                 _repopulateAt = Time.realtimeSinceStartup + 0.25f;
                 return;
             }
 
-            Populate(keepScroll: !_pendingReset);
+            if (detail) Populate(keepScroll: !_pendingReset);
+            else RedrawLists();
         }
 
         /// <summary>
@@ -208,16 +230,27 @@ namespace Keepsake.UI
         private static void RequestPopulate(bool reset)
         {
             _pendingReset |= reset;
+            _listsOnly = false;
             _repopulateAt = Time.realtimeSinceStartup + 0.15f;
         }
 
+        /// <summary>Whether the redraw waiting is only for changes made elsewhere, which leave the detail column alone.</summary>
+        private static bool _listsOnly;
+
+        /// <summary>Whether the selected setting itself changed elsewhere, so the detail column is redrawn too.</summary>
+        private static bool _detailStale;
+
         /// <summary>
         /// A setting changed outside the panel. Some mods write their own settings all the time, so
-        /// these redraw at most twice a second and never push back one already waiting.
+        /// these redraw at most twice a second and never push back one already waiting. They
+        /// redraw the lists only, unless the setting is the one shown on the right: rebuilding the
+        /// detail column would close an open dropdown under your cursor for a change elsewhere.
         /// </summary>
-        private static void OnChangedElsewhere()
+        private static void OnChangedElsewhere(string id)
         {
+            if (id != null && id == _selectedId) _detailStale = true;
             if (_repopulateAt > 0f) return;
+            _listsOnly = true;
             _repopulateAt = Time.realtimeSinceStartup + 0.5f;
         }
 
@@ -228,11 +261,24 @@ namespace Keepsake.UI
 
             _repopulateAt = 0f;
             _pendingReset = false;
+            _listsOnly = false;
+            _detailStale = false;
             PopulateLists(Words(), keepScroll);
             ShowDetail();
             UpdateSummary();
             UpdateBindruneButton();
             ShowNote();
+        }
+
+        /// <summary>Redraws what lists settings, where they stay, and leaves the detail column as it is.</summary>
+        private static void RedrawLists()
+        {
+            if (_root == null) return;
+
+            _repopulateAt = 0f;
+            _listsOnly = false;
+            PopulateLists(Words(), keepScroll: true);
+            UpdateSummary();
         }
 
         private static void UpdateBindruneButton()
@@ -404,7 +450,8 @@ namespace Keepsake.UI
             }
 
             _footer.text = "<color=#ffc060>Orange</color>: kept at your value.   " +
-                           "<color=#6fb0ff>Blue bar</color>: differs from the mod's default.";
+                           "<color=#6fb0ff>Blue bar</color>: differs from the mod's default.   " +
+                           "Quiet: profile changes are not asked about.";
             _footer.color = Dim;
         }
     }

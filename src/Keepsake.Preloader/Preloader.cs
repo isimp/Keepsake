@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using BepInEx;
 using BepInEx.Logging;
 using Mono.Cecil;
@@ -43,23 +44,35 @@ namespace Keepsake
 
         private static void Restore(ManualLogSource log)
         {
-            var leftovers = Restorer.RemoveLeftovers(Paths.ConfigPath, Paths.BepInExRootPath);
+            var clock = System.Diagnostics.Stopwatch.StartNew();
+            var pins = PinFile.Read();
+
+            var written = new List<string> { PinFile.FilePath, ProfileChanges.FilePath };
+            if (pins != null) written.AddRange(pins.Select(p => PinFile.Absolute(p.File)));
+            var leftovers = Restorer.RemoveLeftovers(written);
             if (leftovers > 0) log.LogInfo($"Keepsake: removed {leftovers} file(s) left half written by a game that stopped mid-save.");
 
-            var pins = PinFile.Read();
-            if (pins == null || pins.Count == 0) return;
+            if (pins == null) return;
+            if (pins.Count == 0)
+            {
+                // Nothing kept, so no change can be waiting for an answer either.
+                Restorer.RecordChanges(pins, new List<ProfileChange>());
+                return;
+            }
 
             // Keybinds are Bindrune's while it is installed, so none is written here then. See
             // BindruneLink.
-            var result = Restorer.Apply(pins, BindruneLink.InstalledOnDisk());
+            var result = Restorer.Apply(pins, BindruneLink.InstalledOnDisk);
 
             if (result.Learned) PinFile.Write(pins);
-            ProfileChanges.Hand(result.Changes);
+            var waiting = Restorer.RecordChanges(pins, result.Changes);
 
             log.LogInfo($"Keepsake: {pins.Count} kept setting(s), {result.Restored} put back before the mods loaded" +
                         (result.Changes.Count > 0 ? $", {result.Changes.Count} of them changed by the profile since the last launch" : "") +
+                        (waiting > 0 ? $", {waiting} profile change(s) waiting for an answer in the panel" : "") +
                         (result.Missing > 0 ? $", {result.Missing} not in their cfg file yet" : "") +
-                        (result.ToBindrune > 0 ? $", {result.ToBindrune} keybind(s) left for Bindrune to take over." : "."));
+                        (result.ToBindrune > 0 ? $", {result.ToBindrune} keybind(s) left for Bindrune to take over" : "") +
+                        $", in {clock.Elapsed.TotalMilliseconds:0.0} ms.");
         }
     }
 }

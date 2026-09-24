@@ -68,8 +68,9 @@ namespace Keepsake.UI
             var range = RangeOf(setting.Entry);
             if (range != null) Fact("Allowed", range);
 
-            var choices = ChoicesOf(setting.Entry);
-            if (!setting.IsKeybind && choices != null && choices.Length > MaxChoiceButtons)
+            // A keybind is set by pressing it, and KeyCode alone has hundreds of values to list.
+            var choices = setting.IsKeybind ? null : ChoicesOf(setting.Entry);
+            if (choices != null && choices.Length > MaxChoiceButtons)
                 Fact("Choices", choices.Length <= 20 ? string.Join(", ", choices) : $"one of {choices.Length} values");
 
             var initial = Session.InitialOf(setting.Id);
@@ -135,15 +136,18 @@ namespace Keepsake.UI
 
             Wrapped("Release hands the setting back to the profile and puts the profile's value back.",
                 _detail, DetailInner, 13, Dim);
+
+            Spacer(10f);
+            QuietSwitch(setting, pin);
         }
 
         /// <summary>
-        /// The profile's value moved since the last launch while yours stayed in place. Shown until
+        /// The profile's value moved while yours stayed in place. Shown, across launches, until
         /// you take the profile's, stay with yours, or give the setting another value.
         /// </summary>
         private static void ProfileChangeNotice(Setting setting, Pin pin, ProfileChange change)
         {
-            Wrapped($"Since the last launch, the profile changed this from {KeyLabels.Shown(setting, change.From)} to " +
+            Wrapped($"While you kept your value, the profile changed this from {KeyLabels.Shown(setting, change.From)} to " +
                     $"{KeyLabels.Shown(setting, change.To)}. Your value stays in place until you choose.",
                 _detail, DetailInner, 15, Kept);
 
@@ -156,7 +160,36 @@ namespace Keepsake.UI
                 return null;
             }, Sfx.Kept, () => $"{setting.Key} stays at your value, {KeyLabels.Shown(setting, pin.Value)}."));
 
+            var quiet = ButtonRow();
+            FixedButton("Keep mine, stop asking", quiet, 260f, 34f, () => Act(() =>
+            {
+                Keeper.SetQuiet(pin.Id, true);
+                return null;
+            }, Sfx.Kept, () => $"{setting.Key} stays at your value, and the profile's changes to it are no longer asked about."));
+
             Spacer(8f);
+        }
+
+        /// <summary>
+        /// Whether the profile's changes to a kept setting are asked about, and the switch for it.
+        /// Some settings, such as a volume or a window size, change on the profile all the time.
+        /// </summary>
+        private static void QuietSwitch(Setting setting, Pin pin)
+        {
+            var quiet = Keeper.IsQuiet(pin.Id);
+            Wrapped(quiet
+                    ? "The profile's changes to this are recorded without asking you, so Release still puts back its latest value."
+                    : "When the profile changes this, Keepsake asks whether you want its new value.",
+                _detail, DetailInner, 13, Dim);
+
+            var row = ButtonRow();
+            FixedButton(quiet ? "Ask again" : "Stop asking", row, 150f, 34f, () => Act(() =>
+            {
+                Keeper.SetQuiet(pin.Id, !quiet);
+                return null;
+            }, Sfx.ValueSet, () => quiet
+                ? $"The profile's changes to {setting.Key} are asked about again."
+                : $"The profile's changes to {setting.Key} are no longer asked about."));
         }
 
         /// <summary>

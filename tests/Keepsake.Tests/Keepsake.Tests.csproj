@@ -1,8 +1,8 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <!-- Tests for the parts of Keepsake that need no game: the pins file, the cfg text, the files
-       it shares with Bindrune (see tests/contract), the preloader's pass, and keeping values on
-       real BepInEx settings. They run on .NET 8 against the real BepInEx.dll from the local
+       it shares with Bindrune (see tests/contract), the preloader's pass, and keeping values and
+       keybinds on real BepInEx settings. They run on .NET 8 against the real BepInEx.dll from the local
        profile, which is not committed, together with the metadata-only Unity assemblies in lib/:
        the tests only use enums from those, which the stubs keep whole.
        Run with: dotnet test tests/Keepsake.Tests

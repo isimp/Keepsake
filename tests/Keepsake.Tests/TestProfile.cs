@@ -36,11 +36,11 @@ namespace Keepsake.Tests
             SetPath(nameof(Paths.BepInExRootPath), Root);
             SetPath(nameof(Paths.ConfigPath), ConfigDir);
 
-            ProfileChanges.Take();
             Keeper.Reset();
             Session.Reset();
             SettingIndex.Reset();
             SettingIndex.Sources = Loaded;
+            SettingIndex.IsBindruneLoaded = () => false;
             SettingIndex.FileFound = Keeper.Follow;
             SettingIndex.SettingFound = Session.Note;
             Plugin.Warnings.Clear();
@@ -55,7 +55,7 @@ namespace Keepsake.Tests
         public void WritePins(params string[] lines) =>
             File.WriteAllLines(PinsPath, new[] { PinFile.Version }.Concat(lines));
 
-        public string[] PinLines() =>
+        public string[] PinLines() => !File.Exists(PinsPath) ? new string[0] :
             File.ReadAllLines(PinsPath).Where(l => l.Length > 0 && !l.StartsWith("#")).ToArray();
 
         public string CfgPath(string file) => Path.Combine(ConfigDir, file);
