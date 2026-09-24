@@ -145,6 +145,10 @@ namespace Keepsake
 
             if (!SettingIndex.BindruneLoaded) return;
 
+            // Bindrune takes keybinds out of the pins file after Keepsake last read it, so what is
+            // in memory may still list the ones it took.
+            Keeper.Sync();
+
             var waiting = Keeper.Pins.Count(p => SettingIndex.Find(p.Id)?.IsKeybind == true);
             if (waiting == 0) return;
 
