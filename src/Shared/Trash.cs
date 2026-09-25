@@ -53,6 +53,12 @@ namespace Keepsake
         /// <summary>How many versions of each file are kept.</summary>
         public const int Versions = 5;
 
+        /// <summary>The largest version set aside. A larger file is replaced without one, as the log says.</summary>
+        internal static long MaxFileBytes = 8L * 1024 * 1024;
+
+        /// <summary>The most the kept files' versions take together; past it the oldest go first.</summary>
+        internal static long MaxTotalBytes = 100L * 1024 * 1024;
+
         public static string Root => System.IO.Path.Combine(Paths.BepInExRootPath, "keepsake-trash");
 
         private static string FilesRoot => System.IO.Path.Combine(Root, "files");
@@ -89,7 +95,17 @@ namespace Keepsake
                 var newest = In(folder, name).FirstOrDefault();
                 if (newest != null && SameBytes(newest.File, file)) return true;
 
-                SetAside(file, folder, name, ReasonText(reason));
+                // A large file, such as a texture, would fill the trash on its own.
+                var length = new FileInfo(file).Length;
+                if (length > MaxFileBytes)
+                {
+                    PinFile.Log?.LogInfo($"Keepsake: {path} is {length / (1024 * 1024)} MB, larger than the {MaxFileBytes / (1024 * 1024)} MB " +
+                                         "an earlier version may take, so the version it replaces is not set aside.");
+                    return true;
+                }
+
+                var added = SetAside(file, folder, name, ReasonText(reason));
+                KeepUnderTotal(added);
                 return true;
             }
             catch (Exception ex)
@@ -143,8 +159,33 @@ namespace Keepsake
             }
         }
 
-        /// <summary>Copies the file into the folder under a new version's name, then removes the oldest versions past Versions.</summary>
-        private static void SetAside(string file, string folder, string name, string reason)
+        /// <summary>
+        /// Removes the oldest versions of kept files, whatever file they belong to, while all of
+        /// them together take more than MaxTotalBytes. The version just set aside stays, even
+        /// when it alone is over the limit.
+        /// </summary>
+        private static void KeepUnderTotal(string added)
+        {
+            if (!Directory.Exists(FilesRoot)) return;
+
+            var versions = Directory.GetFiles(FilesRoot, "*.kept", SearchOption.AllDirectories)
+                .Select(file => (Entry: EntryOf(file, out _), Length: new FileInfo(file).Length))
+                .Where(v => v.Entry != null)
+                .ToList();
+
+            var total = versions.Sum(v => v.Length);
+            foreach (var (entry, length) in versions.OrderBy(v => v.Entry.At).ThenBy(v => v.Entry.Count))
+            {
+                if (total <= MaxTotalBytes) break;
+                if (string.Equals(entry.File, added, StringComparison.OrdinalIgnoreCase)) continue;
+
+                System.IO.File.Delete(entry.File);
+                total -= length;
+            }
+        }
+
+        /// <summary>Copies the file into the folder under a new version's name, then removes the oldest versions past Versions. Returns the new version's file.</summary>
+        private static string SetAside(string file, string folder, string name, string reason)
         {
             Directory.CreateDirectory(folder);
 
@@ -166,6 +207,7 @@ namespace Keepsake
             // What a game that stopped mid-copy left behind.
             foreach (var leftover in Directory.GetFiles(folder, name + ".*" + PinFile.TempSuffix))
                 if (!string.Equals(leftover, temp, StringComparison.OrdinalIgnoreCase)) System.IO.File.Delete(leftover);
+            return target;
         }
 
         /// <summary>The versions of one file in a folder of the trash, newest first.</summary>
@@ -176,21 +218,31 @@ namespace Keepsake
             var entries = new List<TrashEntry>();
             foreach (var file in Directory.GetFiles(folder, name + ".*.kept"))
             {
-                var match = VersionName.Match(System.IO.Path.GetFileName(file));
-                if (!match.Success || !string.Equals(match.Groups["name"].Value, name, StringComparison.OrdinalIgnoreCase)) continue;
-                if (!DateTime.TryParseExact(match.Groups["at"].Value, StampFormat, CultureInfo.InvariantCulture,
-                        DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal, out var at)) continue;
-
-                entries.Add(new TrashEntry
-                {
-                    File = file,
-                    At = at,
-                    Count = match.Groups["count"].Success ? int.Parse(match.Groups["count"].Value, CultureInfo.InvariantCulture) : 0,
-                    Reason = ReasonOf(match.Groups["reason"].Value),
-                });
+                var entry = EntryOf(file, out var of);
+                if (entry != null && string.Equals(of, name, StringComparison.OrdinalIgnoreCase)) entries.Add(entry);
             }
 
             return entries.OrderByDescending(e => e.At).ThenByDescending(e => e.Count).ToList();
+        }
+
+        /// <summary>The version a file in the trash holds, told by its name, or null for a name that is not a version's.</summary>
+        /// <param name="name">The name of the file it is a version of.</param>
+        private static TrashEntry EntryOf(string file, out string name)
+        {
+            name = null;
+            var match = VersionName.Match(System.IO.Path.GetFileName(file));
+            if (!match.Success) return null;
+            if (!DateTime.TryParseExact(match.Groups["at"].Value, StampFormat, CultureInfo.InvariantCulture,
+                    DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal, out var at)) return null;
+
+            name = match.Groups["name"].Value;
+            return new TrashEntry
+            {
+                File = file,
+                At = at,
+                Count = match.Groups["count"].Success ? int.Parse(match.Groups["count"].Value, CultureInfo.InvariantCulture) : 0,
+                Reason = ReasonOf(match.Groups["reason"].Value),
+            };
         }
 
         private static TrashReason ReasonOf(string text) =>

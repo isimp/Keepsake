@@ -267,6 +267,88 @@ namespace Keepsake.Tests
             Assert.Equal("0.8", Volume(other));
         }
 
+        // ---------- what a session changed, then a crash ----------
+
+        [Fact]
+        public void AValueChangedInASessionThatCrashedSurvivesAnUpdate()
+        {
+            using (var profile = Played())
+            {
+                profile.Launch();
+                var config = profile.Mod("a.cfg");
+                config.Bind("General", "Volume", 0.8f, "How loud.");
+                profile.Index();
+                Assert.Null(Keeper.SetValue(profile.Setting("a.cfg", "General", "Volume"), "0.3"));
+
+                // No close: the game crashed.
+            }
+
+            UpdateExistingProfile(volume: "0.8");
+            using var updated = Open();
+            updated.Launch();
+
+            Assert.Equal("0.3", Volume(updated));
+        }
+
+        [Fact]
+        public void ASettingKeptInASessionThatCrashedSurvivesAnUpdate()
+        {
+            using (var profile = Played())
+            {
+                profile.Launch();
+                var config = profile.Mod("b.cfg");
+                config.Bind("General", "Speed", 5, "How fast.");
+                profile.Index();
+                Assert.Null(Keeper.Pin(profile.Setting("b.cfg", "General", "Speed")));
+            }
+
+            UpdateExistingProfile(volume: "0.8");
+            using var updated = Open();
+            updated.Launch();
+
+            Assert.NotNull(Keeper.Find(PinFile.IdOf("b.cfg", "General", "Speed")));
+        }
+
+        [Fact]
+        public void AFileKeptInASessionThatCrashedSurvivesAnUpdate()
+        {
+            using (var profile = Played())
+            {
+                profile.Launch();
+                var file = profile.CfgPath("Mod/state.json");
+                Directory.CreateDirectory(Path.GetDirectoryName(file)!);
+                File.WriteAllText(file, "mine");
+                Assert.Null(FileKeeper.Keep("Mod/state.json", isFolder: false));
+            }
+
+            UpdateExistingProfile(volume: "0.8");
+            using var updated = Open();
+            updated.Launch();
+
+            Assert.NotNull(FileKeeper.KeptBy("Mod/state.json"));
+            Assert.Equal("mine", File.ReadAllText(updated.CfgPath("Mod/state.json")));
+        }
+
+        [Fact]
+        public void WhatWasReleasedInASessionThatCrashedStaysReleasedAfterAnUpdate()
+        {
+            using (var profile = Played())
+            {
+                profile.Launch();
+                Assert.Null(FileKeeper.Release("Seasonality"));
+                Keeper.UnpinAll(Keeper.Pins.Select(p => p.Id).ToList());
+            }
+
+            UpdateExistingProfile(volume: "0.8", timer: "the pack's");
+            using var updated = Open();
+            updated.Launch();
+
+            Assert.Empty(FileKeeper.Kept);
+            Assert.Empty(Keeper.Pins);
+            Assert.Equal("0.8", Volume(updated));
+            Assert.Equal("the pack's", TimerOf(updated));
+        }
+
         // ---------- asked first ----------
 
         [Fact]

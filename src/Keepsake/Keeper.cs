@@ -344,6 +344,7 @@ namespace Keepsake
             if (_changesUnreadable || _unreadable) return;
             ProfileChanges.KeepOnly(Changes, _byId.Keys);
             ProfileChanges.Write(Changes);
+            SpareCopy.Follow();
         }
 
         /// <summary>Takes the profile's new value as yours, and the setting stays kept.</summary>
@@ -620,6 +621,7 @@ namespace Keepsake
 
             if (!PinFile.Write(_pins)) return false;
             _stamp = PinFile.Stamp();
+            SpareCopy.Follow();
 
             // Every value in memory is in the file now, followed ones included.
             foreach (var id in Pending.Keys)

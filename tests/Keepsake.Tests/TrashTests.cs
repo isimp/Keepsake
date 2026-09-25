@@ -267,6 +267,99 @@ namespace Keepsake.Tests
             for (var i = 3; i <= 7; i++) Assert.Contains(kept, k => k.Contains($"Speed\t{i}\t"));
         }
 
+        // ---------- size ----------
+
+        /// <summary>Smaller limits for the trash while a test runs, back to the real ones after.</summary>
+        private sealed class Limits : IDisposable
+        {
+            private readonly long _file = Trash.MaxFileBytes;
+            private readonly long _total = Trash.MaxTotalBytes;
+
+            public Limits(long file, long total)
+            {
+                Trash.MaxFileBytes = file;
+                Trash.MaxTotalBytes = total;
+            }
+
+            public void Dispose()
+            {
+                Trash.MaxFileBytes = _file;
+                Trash.MaxTotalBytes = _total;
+            }
+        }
+
+        [Fact]
+        public void TheRealLimitsAreEightMegabytesAVersionAndAHundredInAll()
+        {
+            Assert.Equal(8L * 1024 * 1024, Trash.MaxFileBytes);
+            Assert.Equal(100L * 1024 * 1024, Trash.MaxTotalBytes);
+        }
+
+        [Fact]
+        public void AFileOverTheLimitIsStillPutBackButKeepsNoEarlierVersion()
+        {
+            using var profile = new TestProfile();
+            using var limits = new Limits(file: 100, total: 10_000);
+            var big = new string('x', 150);
+            var file = Write(profile, State, big, Earlier);
+            FileKeeper.Keep(State, isFolder: false);
+            profile.Launch(Earlier.AddMinutes(1));
+            profile.Close(Earlier.AddHours(1));
+            Write(profile, State, "the owner's, " + new string('y', 150), Earlier.AddDays(1));
+
+            profile.Launch(Earlier.AddDays(2), logEnd: Earlier.AddHours(1));
+
+            Assert.Equal(big, File.ReadAllText(file));
+            Assert.Empty(Trash.Of(State));
+        }
+
+        [Fact]
+        public void ReleasingAFileOverTheLimitStillReleasesIt()
+        {
+            using var profile = new TestProfile();
+            using var limits = new Limits(file: 100, total: 10_000);
+            Write(profile, State, new string('x', 150), Earlier);
+            FileKeeper.Keep(State, isFolder: false);
+
+            Assert.Null(FileKeeper.Release(State));
+
+            Assert.Null(FileKeeper.KeptBy(State));
+            Assert.False(File.Exists(KeptFiles.Copy(State)));
+        }
+
+        [Fact]
+        public void TheTrashStaysUnderItsLimitTheOldestGoingFirst()
+        {
+            using var profile = new TestProfile();
+            using var limits = new Limits(file: 1_000, total: 350);
+
+            // Four files released one after another, 100 bytes each.
+            foreach (var n in new[] { "a", "b", "c", "d" })
+            {
+                Write(profile, $"Mod/{n}.bin", new string(n[0], 100), Earlier);
+                FileKeeper.Keep($"Mod/{n}.bin", isFolder: false);
+                Assert.Null(FileKeeper.Release($"Mod/{n}.bin"));
+            }
+
+            Assert.Empty(Trash.Of("Mod/a.bin"));
+            Assert.Single(Trash.Of("Mod/b.bin"));
+            Assert.Single(Trash.Of("Mod/c.bin"));
+            Assert.Single(Trash.Of("Mod/d.bin"));
+        }
+
+        [Fact]
+        public void TheVersionJustSetAsideIsKeptEvenWhenItAloneIsOverTheWholeLimit()
+        {
+            using var profile = new TestProfile();
+            using var limits = new Limits(file: 1_000, total: 50);
+            Write(profile, State, new string('x', 100), Earlier);
+            FileKeeper.Keep(State, isFolder: false);
+
+            Assert.Null(FileKeeper.Release(State));
+
+            Assert.Single(Trash.Of(State));
+        }
+
         // ---------- nothing set aside, nothing replaced ----------
 
         [Fact]

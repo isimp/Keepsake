@@ -209,6 +209,23 @@ namespace Keepsake
         }
 
         /// <summary>
+        /// Brings the spare copy up to date after the plugin saved one of Keepsake's files, so what
+        /// a session kept, released or changed is in it even if the game then crashes. Never
+        /// throws: the spare copy is caught up at the next launch or close either way.
+        /// </summary>
+        public static void Follow()
+        {
+            try
+            {
+                Update();
+            }
+            catch (Exception ex)
+            {
+                PinFile.Log?.LogWarning($"Keepsake: saving the spare copy failed: {ex.Message}");
+            }
+        }
+
+        /// <summary>
         /// Makes what Keepsake keeps in one folder match the other: each file that differs is
         /// copied, and each the source no longer has is removed. Files are told apart by length and
         /// time of the last write, as kept files are. See KeptFiles.Differ.

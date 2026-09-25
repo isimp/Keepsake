@@ -84,6 +84,7 @@ namespace Keepsake
             if (!KeptFiles.Write(_kept)) return "keepsake.files could not be saved, see the log";
 
             KeptFiles.Save(new[] { entry });
+            SpareCopy.Follow();
             return null;
         }
 
@@ -107,6 +108,7 @@ namespace Keepsake
 
             var session = Session;
             if (session != null && session.Waiting.RemoveAll(w => entry.Covers(w.Path)) > 0) SessionFile.Write(session);
+            SpareCopy.Follow();
             return null;
         }
 
@@ -135,7 +137,15 @@ namespace Keepsake
             if (waiting == null) return "that file is not waiting for an answer";
 
             waiting.PutBack = true;
-            return SessionFile.Write(Session) ? null : "keepsake.session could not be saved, see the log";
+            return Saved(SessionFile.Write(Session));
+        }
+
+        /// <summary>After an answer or a Put back: the session file saved, and the spare copy following it. Returns why not, or null.</summary>
+        private static string Saved(bool written)
+        {
+            if (!written) return "keepsake.session could not be saved, see the log";
+            SpareCopy.Follow();
+            return null;
         }
 
         /// <summary>The file as it is now becomes yours: its copy is made from it, and it no longer waits.</summary>
@@ -148,7 +158,7 @@ namespace Keepsake
 
             KeptFiles.CopyOver(KeptFiles.Live(path), KeptFiles.Copy(path));
             Session.Waiting.Remove(waiting);
-            return SessionFile.Write(Session) ? null : "keepsake.session could not be saved, see the log";
+            return Saved(SessionFile.Write(Session));
         }
 
         /// <summary>
@@ -187,7 +197,7 @@ namespace Keepsake
             var waiting = WaitingFor(path);
             if (waiting == null) Session.Waiting.Add(waiting = new WaitingFile { Path = path });
             waiting.PutBack = true;
-            return SessionFile.Write(Session) ? null : "keepsake.session could not be saved, see the log";
+            return Saved(SessionFile.Write(Session));
         }
 
         /// <summary>

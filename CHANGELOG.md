@@ -4,7 +4,7 @@
 
 What you kept now survives Update existing profile in Thunderstore Mod Manager and r2modman. For their profiles Keepsake offers to keep a spare copy next to the profiles folder, asking once before it writes anything there, and brings it back at the first launch after an update, saying so in the corner. The Spare copy button in the panel changes the answer.
 
-Nothing Keepsake replaces or releases is lost any more. The version it replaces is set aside first, and a kept file's detail lists its last five earlier versions to look at and put back. Keepsake's own lists are set aside at each launch too.
+Nothing Keepsake replaces or releases is lost any more. The version it replaces is set aside first, and a kept file's detail lists its last five earlier versions to look at and put back. Files over 8 MB keep no earlier versions, and all of them together stay under 100 MB. Keepsake's own lists are set aside at each launch too.
 
 A Keepsake file held open by another program is never written over, and keeping, releasing or setting a value says so when it cannot be saved instead of looking done. Writing a kept value keeps a cfg file's byte order mark, and a line in keepsake.pins pointing outside BepInEx/config is skipped.
 
