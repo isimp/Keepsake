@@ -164,7 +164,8 @@ namespace Keepsake
         /// <summary>
         /// An earlier version of a file goes back in at the next launch, before any mod reads the
         /// file: it becomes the copy, and the file waits with your copy chosen. A file no longer
-        /// kept is kept again for it. The copy it replaces is set aside first.
+        /// kept is kept again for it, once the copy is in place, so a step that fails leaves it as
+        /// it was. The copy it replaces is set aside first.
         /// </summary>
         public static string PutBackVersion(string path, TrashEntry version)
         {
@@ -173,26 +174,40 @@ namespace Keepsake
             if (_unreadable) return "keepsake.files could not be read, so nothing is added to it until it can";
             if (Session == null) return "keepsake.session could not be read, see the log";
 
-            if (KeptBy(path) == null)
+            var copy = KeptFiles.Copy(path);
+            var kept = KeptBy(path) != null;
+            try
             {
-                _kept.Add(new KeptPath { Path = path });
-                if (!KeptFiles.Write(_kept)) return "keepsake.files could not be saved, see the log";
+                // Read first: setting the copy aside may take the oldest version out of the trash,
+                // and that may be this one.
+                var bytes = File.ReadAllBytes(version.File);
+                var written = File.GetLastWriteTimeUtc(version.File);
+
+                if (!Trash.Put(path, copy, TrashReason.Copy)) return "your copy could not be set aside, see the log";
+
+                Directory.CreateDirectory(Path.GetDirectoryName(copy));
+                var temp = copy + PinFile.TempSuffix;
+                File.WriteAllBytes(temp, bytes);
+                if (File.Exists(copy)) File.Replace(temp, copy, null);
+                else File.Move(temp, copy);
+                File.SetLastWriteTimeUtc(copy, written);
+            }
+            catch (Exception ex)
+            {
+                Plugin.Log?.LogWarning($"Keepsake: could not put back the earlier version of {path}: {ex.Message}");
+                return "the earlier version could not be put back, see the log";
             }
 
-            // Read first: setting the copy aside may take the oldest version out of the trash, and
-            // that may be this one.
-            var bytes = File.ReadAllBytes(version.File);
-            var written = File.GetLastWriteTimeUtc(version.File);
-
-            var copy = KeptFiles.Copy(path);
-            if (!Trash.Put(path, copy, TrashReason.Copy)) return "your copy could not be set aside, see the log";
-
-            Directory.CreateDirectory(Path.GetDirectoryName(copy));
-            var temp = copy + PinFile.TempSuffix;
-            File.WriteAllBytes(temp, bytes);
-            if (File.Exists(copy)) File.Replace(temp, copy, null);
-            else File.Move(temp, copy);
-            File.SetLastWriteTimeUtc(copy, written);
+            if (!kept)
+            {
+                _kept.Add(new KeptPath { Path = path });
+                if (!KeptFiles.Write(_kept))
+                {
+                    _kept.RemoveAt(_kept.Count - 1);
+                    KeptFiles.Forget(new KeptPath { Path = path });
+                    return "keepsake.files could not be saved, see the log";
+                }
+            }
 
             var waiting = WaitingFor(path);
             if (waiting == null) Session.Waiting.Add(waiting = new WaitingFile { Path = path });

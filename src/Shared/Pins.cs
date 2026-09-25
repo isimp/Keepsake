@@ -177,7 +177,8 @@ namespace Keepsake
 
         /// <summary>
         /// Writes a text file aside and swaps it in, so a crash mid-write leaves the old file
-        /// rather than half of the new one. UTF-8 without a byte order mark, as BepInEx writes.
+        /// rather than half of the new one. UTF-8 without a byte order mark, as BepInEx writes,
+        /// unless the file had one.
         /// </summary>
         /// <param name="byteOrderMark">Whether the file starts with a UTF-8 byte order mark, as one that had it keeps it.</param>
         public static void ReplaceText(string path, string text, bool byteOrderMark = false)

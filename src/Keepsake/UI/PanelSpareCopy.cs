@@ -1,5 +1,6 @@
 using Jotunn.Managers;
 using UnityEngine;
+using UnityEngine.EventSystems;
 using UnityEngine.UI;
 
 namespace Keepsake.UI
@@ -40,6 +41,10 @@ namespace Keepsake.UI
         {
             CloseModal();
             KeyCapture.Cancel();
+
+            // The shade takes the clicks; the keyboard is taken from the search box or a value
+            // field, which would otherwise go on taking what you type behind the box.
+            if (EventSystem.current != null) EventSystem.current.SetSelectedGameObject(null);
 
             var shade = new GameObject("spare copy", typeof(RectTransform), typeof(Image));
             shade.transform.SetParent(_root.transform, false);

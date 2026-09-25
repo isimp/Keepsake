@@ -234,6 +234,26 @@ namespace Keepsake.Tests
         }
 
         [Fact]
+        public void AProfileThatReleasedEverythingIsNotAskedAboutASpareCopy()
+        {
+            using var profile = Open();
+            profile.WriteCfg("a.cfg", string.Format(Cfg, "0.8"));
+            profile.WritePins("a.cfg\tGeneral\tVolume\t0.2\t0.8");
+            profile.Launch();
+            Assert.True(SpareCopy.Asks);
+
+            Keeper.UnpinAll(Keeper.Pins.Select(p => p.Id).ToList());
+
+            // keepsake.pins is still there, holding nothing.
+            Assert.True(File.Exists(PinFile.FilePath));
+            Assert.False(SpareCopy.Asks);
+
+            File.WriteAllText(profile.CfgPath("state.bin"), "mine");
+            Assert.Null(FileKeeper.Keep("state.bin", isFolder: false));
+            Assert.True(SpareCopy.Asks);
+        }
+
+        [Fact]
         public void AProfileWithoutModsYmlGetsNothingWrittenOutsideIt()
         {
             Played(modsYml: false).Dispose();

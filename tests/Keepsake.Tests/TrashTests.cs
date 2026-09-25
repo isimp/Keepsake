@@ -404,6 +404,27 @@ namespace Keepsake.Tests
         }
 
         [Fact]
+        public void PuttingBackAVersionThatCannotBeWrittenSaysSoAndChangesNothing()
+        {
+            using var profile = new TestProfile();
+            Write(profile, State, "v1", Earlier);
+            FileKeeper.Keep(State, isFolder: false);
+            Assert.Null(FileKeeper.Release(State));
+            var list = File.Exists(KeptFiles.ListPath) ? File.ReadAllText(KeptFiles.ListPath) : null;
+
+            // Something in the way of where the copy would go.
+            var copies = Path.Combine(profile.Root, "keepsake-files", "Mod");
+            if (Directory.Exists(copies)) Directory.Delete(copies, true);
+            File.WriteAllText(copies, "in the way");
+
+            Assert.NotNull(FileKeeper.PutBackVersion(State, Trash.Of(State).Single()));
+
+            Assert.Null(FileKeeper.KeptBy(State));
+            Assert.Equal(list, File.Exists(KeptFiles.ListPath) ? File.ReadAllText(KeptFiles.ListPath) : null);
+            Assert.Null(FileKeeper.WaitingFor(State));
+        }
+
+        [Fact]
         public void KeepingAWaitingFileThatCannotSetTheCopyAsideSaysSo()
         {
             using var profile = new TestProfile();

@@ -257,9 +257,18 @@ namespace Keepsake
 
             Write(setting, text);
 
-            // The setting may have adjusted it, for example to fit its allowed range.
+            // The setting may have adjusted it, for example to fit its allowed range. One it turns
+            // into something the pins file cannot hold is undone, rather than kept apart from yours.
             var now = setting.Current ?? text;
-            if (now != text && PinFile.Storable(now))
+            if (now != text && !PinFile.Storable(now))
+            {
+                Write(setting, before);
+                pin.Value = before;
+                Save();
+                return $"{setting.Key} would become a value with line breaks or tabs in it, which Keepsake cannot store, so it stays as it was";
+            }
+
+            if (now != text)
             {
                 pin.Value = now;
                 Save();

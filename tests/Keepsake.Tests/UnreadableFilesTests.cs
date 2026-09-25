@@ -170,6 +170,48 @@ namespace Keepsake.Tests
             Assert.Equal("8", PinFile.Read()!.Single(p => p.Key == "Speed").Value);
         }
 
+        /// <summary>
+        /// A setting of a mod's own type, written as its text is. BepInEx escapes tabs and line
+        /// breaks in a string setting, but a type with a converter of its own can write them.
+        /// </summary>
+        private sealed class Word
+        {
+            public string Text;
+        }
+
+        /// <summary>A mod that turns one value into one with a tab in it, which keepsake.pins cannot hold.</summary>
+        private sealed class TurnsXIntoATab : BepInEx.Configuration.AcceptableValueBase
+        {
+            public TurnsXIntoATab() : base(typeof(Word)) { }
+            public override object Clamp(object value) => ((Word)value).Text == "x" ? new Word { Text = "x\tadjusted" } : value;
+            public override bool IsValid(object value) => ((Word)value).Text != "x";
+            public override string ToDescriptionString() => "# The mod adjusts x.";
+        }
+
+        static UnreadableFilesTests() =>
+            BepInEx.Configuration.TomlTypeConverter.AddConverter(typeof(Word), new BepInEx.Configuration.TypeConverter
+            {
+                ConvertToString = (value, type) => ((Word)value).Text,
+                ConvertToObject = (text, type) => new Word { Text = text },
+            });
+
+        [Fact]
+        public void AValueTheModTurnsIntoOneThatCannotBeKeptIsRefusedAndNothingChanges()
+        {
+            using var profile = WithAKeptVolume();
+            var config = profile.Mod("b.cfg");
+            var name = config.Bind("General", "Name", new Word { Text = "plain" }, new BepInEx.Configuration.ConfigDescription("A name.", new TurnsXIntoATab()));
+            profile.Index();
+            var setting = profile.Setting("b.cfg", "General", "Name");
+            Assert.Null(Keeper.Pin(setting));
+
+            Assert.NotNull(Keeper.SetValue(setting, "x"));
+
+            Assert.Equal("plain", name.Value.Text);
+            Assert.Equal("plain", Keeper.Find(setting.Id)!.Value);
+            Assert.Contains(PinFile.Read()!, p => p.Key == "Name" && p.Value == "plain");
+        }
+
         [Fact]
         public void OnceThePinsFileCanBeReadAgainKeepingAddsToWhatItHolds()
         {

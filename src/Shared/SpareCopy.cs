@@ -25,8 +25,9 @@ namespace Keepsake
     /// plugin's cfg file, which a sync hands out and an export carries, so no pack answers for the
     /// people who follow it. The answer is part of the spare copy and comes back with it.
     ///
-    /// The copy is brought up to date at the end of each launch and as the game closes, and only
-    /// from a profile that has Keepsake's lists, so a profile that lost them never writes over it.
+    /// The copy is brought up to date at the end of each launch, as the game closes, and after each
+    /// save of Keepsake's files from the panel, and only from a profile that has Keepsake's lists,
+    /// so a profile that lost them never writes over it.
     /// Keepsake removes a spare copy only when you turn it off; a profile deleted in the manager
     /// leaves its spare copy behind.
     /// </summary>
@@ -51,7 +52,10 @@ namespace Keepsake
         /// <summary>Keepsake's lists: a profile with none of them has lost what it kept, or never kept anything.</summary>
         private static readonly string[] Lists = { "keepsake.pins", "keepsake.changes", "keepsake.files" };
 
-        /// <summary>Everything the copy holds, relative to BepInEx, in the order it is written: the folders first, the lists last.</summary>
+        /// <summary>
+        /// Everything the copy holds, relative to BepInEx, in the order it is written: the folders
+        /// first, then these files, the lists last.
+        /// </summary>
         private static readonly string[] Folders = { "keepsake-files", "keepsake-trash" };
 
         private static readonly string[] Files = { "keepsake.spare", "keepsake.session", "keepsake.changes", "keepsake.files", "keepsake.pins" };
@@ -89,7 +93,22 @@ namespace Keepsake
         public static bool Offered => Folder != null;
 
         /// <summary>Whether to ask about a spare copy now: a profile that could have one, that keeps something, and no answer yet.</summary>
-        public static bool Asks => Offered && HasLists(Paths.BepInExRootPath) && Wanted == null;
+        public static bool Asks => Offered && KeepsSomething() && Wanted == null;
+
+        /// <summary>Whether the profile keeps a setting or a file. The lists stay behind, empty, once everything is released.</summary>
+        private static bool KeepsSomething() =>
+            new[] { "keepsake.pins", "keepsake.files" }.Any(name =>
+            {
+                try
+                {
+                    var file = Path.Combine(Paths.BepInExRootPath, name);
+                    return File.Exists(file) && File.ReadLines(file).Any(l => l.Trim().Length > 0 && !l.StartsWith("#"));
+                }
+                catch (Exception)
+                {
+                    return false;
+                }
+            });
 
         /// <summary>
         /// Records your answer. Yes makes the spare copy at once; no removes one made before, and
