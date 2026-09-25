@@ -228,10 +228,11 @@ namespace Keepsake
         }
 
         /// <summary>
-        /// Makes a copy of every file the kept paths cover that changed since its last copy.
-        /// A file gone from BepInEx/config keeps its copy, so a file a sync took away is put back
-        /// rather than forgotten. Files waiting for an answer keep the copy they have, since it is
-        /// one of the two to choose from. Returns how many were copied.
+        /// Makes a copy of every file the kept paths cover that changed since its last copy, the
+        /// last copy set aside in the trash first. A file gone from BepInEx/config keeps its copy,
+        /// so a file a sync took away is put back rather than forgotten. Files waiting for an
+        /// answer keep the copy they have, since it is one of the two to choose from. Returns how
+        /// many were copied.
         /// </summary>
         public static int Save(IEnumerable<KeptPath> kept, Func<string, bool> waiting = null)
         {
@@ -255,6 +256,7 @@ namespace Keepsake
                     {
                         if (waiting != null && waiting(path)) continue;
                         if (!Differ(Live(path), Copy(path))) continue;
+                        if (!Trash.Put(path, Copy(path), TrashReason.Copy)) continue;
                         CopyOver(Live(path), Copy(path));
                         saved++;
                     }
@@ -301,7 +303,8 @@ namespace Keepsake
         /// choose, since a mod writing late in a crash and a sync after it look the same.
         ///
         /// A file that is missing is put back either way. Files the kept folders hold that have no
-        /// copy, such as ones a sync brought, are left as they are.
+        /// copy, such as ones a sync brought, are left as they are. Whatever is replaced, the file
+        /// or its copy, is set aside in the trash first. See Trash.
         /// </summary>
         /// <param name="logEnd">When the last game's BepInEx log was last written. See SessionFile.LogEnd.</param>
         public static SettleResult Settle(IEnumerable<KeptPath> kept, SessionState state, DateTime? logEnd)
@@ -357,6 +360,12 @@ namespace Keepsake
             {
                 if (waiting.PutBack)
                 {
+                    if (!Trash.Put(path, live, TrashReason.Replaced))
+                    {
+                        result.Waiting++;
+                        return;
+                    }
+
                     CopyOver(copy, live);
                     state.Waiting.Remove(waiting);
                     result.PutBack++;
@@ -377,15 +386,19 @@ namespace Keepsake
 
             if (!Differ(copy, live)) return;
 
+            // Whichever version is replaced below is set aside first, and when it cannot be, both
+            // stay as they are and the next launch looks again.
             var written = File.GetLastWriteTimeUtc(live);
             if (end != null && written <= end && (from == null || written > from))
             {
+                if (!Trash.Put(path, copy, TrashReason.Copy)) return;
                 CopyOver(live, copy);
                 result.Updated++;
                 PinFile.Log?.LogInfo($"Keepsake: {path} was written while the game ran, so your copy now matches it.");
             }
             else if (result.Clean)
             {
+                if (!Trash.Put(path, live, TrashReason.Replaced)) return;
                 CopyOver(copy, live);
                 result.PutBack++;
                 PinFile.Log?.LogInfo($"Keepsake: put back your copy of {path}, which changed after the game closed" +
@@ -402,19 +415,37 @@ namespace Keepsake
 
         private static DateTime? Later(DateTime? a, DateTime? b) => a == null ? b : b == null ? a : a > b ? a : b;
 
-        /// <summary>Removes the copies of a path no longer kept.</summary>
+        /// <summary>
+        /// Sets every copy of a kept path aside in the trash, before it is released. Returns false
+        /// when one could not be set aside, and the path is then to stay kept.
+        /// </summary>
+        public static bool SetAside(KeptPath kept)
+        {
+            try
+            {
+                return CopiedFiles(kept).All(path => Trash.Put(path, Copy(path), TrashReason.Released));
+            }
+            catch (Exception ex)
+            {
+                PinFile.Log?.LogWarning($"Keepsake: could not look through the copies of {kept.Path}: {ex.Message}");
+                return false;
+            }
+        }
+
+        /// <summary>Removes the copies of a path no longer kept, once they are set aside, and the folders they leave empty.</summary>
         public static void Forget(KeptPath kept)
         {
             try
             {
-                if (!kept.IsFolder)
-                {
-                    if (File.Exists(Copy(kept.Path))) File.Delete(Copy(kept.Path));
-                    return;
-                }
+                foreach (var path in CopiedFiles(kept)) File.Delete(Copy(path));
 
+                if (!kept.IsFolder) return;
+
+                // The folders the copies were in, once they are empty.
                 var folder = System.IO.Path.Combine(StoreRoot, kept.Path.Replace('/', System.IO.Path.DirectorySeparatorChar));
-                if (Directory.Exists(folder)) Directory.Delete(folder, true);
+                if (!Directory.Exists(folder)) return;
+                foreach (var below in Directory.GetDirectories(folder, "*", SearchOption.AllDirectories).OrderByDescending(d => d.Length).Concat(new[] { folder }))
+                    if (Directory.GetFileSystemEntries(below).Length == 0) Directory.Delete(below);
             }
             catch (Exception ex)
             {

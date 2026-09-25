@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using BepInEx;
 using BepInEx.Logging;
 using Mono.Cecil;
@@ -17,7 +16,7 @@ namespace Keepsake
     ///
     /// It patches nothing: BepInEx calls Initialize on every patcher it finds, which is all this
     /// needs. Whatever value it replaces is remembered as the profile's, which is what a setting
-    /// goes back to when you stop keeping it.
+    /// goes back to when you stop keeping it. The work itself is Launcher's.
     /// </summary>
     public static class Preloader
     {
@@ -34,49 +33,12 @@ namespace Keepsake
 
             try
             {
-                Restore(log);
+                Launcher.Run(DateTime.UtcNow, SessionFile.LogEnd(), BindruneLink.InstalledOnDisk);
             }
             catch (Exception ex)
             {
-                log.LogError($"Keepsake: putting your values back failed: {ex}");
+                log.LogError($"Keepsake: the launch failed: {ex}");
             }
-        }
-
-        private static void Restore(ManualLogSource log)
-        {
-            var clock = System.Diagnostics.Stopwatch.StartNew();
-            var pins = PinFile.Read();
-            var kept = KeptFiles.Read();
-
-            var written = new List<string> { PinFile.FilePath, ProfileChanges.FilePath, KeptFiles.ListPath, SessionFile.FilePath };
-            if (pins != null) written.AddRange(pins.Select(p => PinFile.Absolute(p.File)));
-            if (kept != null) written.AddRange(Restorer.KeptFilePaths(kept));
-            var leftovers = Restorer.RemoveLeftovers(written);
-            if (leftovers > 0) log.LogInfo($"Keepsake: removed {leftovers} file(s) left half written by a game that stopped mid-save.");
-
-            if (kept != null) Restorer.SettleFiles(kept, DateTime.UtcNow, SessionFile.LogEnd());
-
-            if (pins == null) return;
-            if (pins.Count == 0)
-            {
-                // Nothing kept, so no change can be waiting for an answer either.
-                Restorer.RecordChanges(pins, new List<ProfileChange>());
-                return;
-            }
-
-            // Keybinds are Bindrune's while it is installed, so none is written here then. See
-            // BindruneLink.
-            var result = Restorer.Apply(pins, BindruneLink.InstalledOnDisk);
-
-            if (result.Learned) PinFile.Write(pins);
-            var waiting = Restorer.RecordChanges(pins, result.Changes);
-
-            log.LogInfo($"Keepsake: {pins.Count} kept setting(s), {result.Restored} put back before the mods loaded" +
-                        (result.Changes.Count > 0 ? $", {result.Changes.Count} of them changed by the profile since the last launch" : "") +
-                        (waiting > 0 ? $", {waiting} profile change(s) waiting for an answer in the panel" : "") +
-                        (result.Missing > 0 ? $", {result.Missing} not in their cfg file yet" : "") +
-                        (result.ToBindrune > 0 ? $", {result.ToBindrune} keybind(s) left for Bindrune to take over" : "") +
-                        $", in {clock.Elapsed.TotalMilliseconds:0.0} ms.");
         }
     }
 }

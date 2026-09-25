@@ -30,6 +30,81 @@ namespace Keepsake.Tests
         private static Pin SpeedPin(string value, string profile) =>
             new Pin { File = "a.cfg", Section = "General", Key = "Speed", Value = value, Profile = profile };
 
+        [Theory]
+        [InlineData("../outside.cfg")]
+        [InlineData("sub/../../outside.cfg")]
+        [InlineData("/outside.cfg")]
+        [InlineData("C:/outside.cfg")]
+        public void AKeptSettingInAFileOutsideConfigIsNeverWritten(string file)
+        {
+            using var profile = new TestProfile();
+            var outside = Path.Combine(profile.Root, "outside.cfg");
+            File.WriteAllText(outside, CfgWith("5"));
+            if (file.StartsWith("/") || file.StartsWith("C:")) file = outside.Replace('\\', '/');
+            profile.WritePins($"{file}\tGeneral\tSpeed\t9\t5");
+
+            profile.Launch();
+
+            Assert.Equal(CfgWith("5"), File.ReadAllText(outside));
+            Assert.Empty(PinFile.Read()!);
+        }
+
+        [Fact]
+        public void ACfgFileThatCannotBeWrittenAtLaunchGetsYourValueOnceTheModLoads()
+        {
+            using var profile = new TestProfile();
+            profile.WriteCfg("a.cfg", CfgWith("5"));
+            profile.WritePins("a.cfg\tGeneral\tSpeed\t9\t5");
+
+            using (new FileStream(profile.CfgPath("a.cfg"), FileMode.Open, FileAccess.Read, FileShare.Read))
+                profile.Launch();
+            Assert.Equal(CfgWith("5"), File.ReadAllText(profile.CfgPath("a.cfg")));
+
+            // The mod binds its settings from the file as it is, and the plugin puts yours in.
+            var config = profile.Mod("a.cfg");
+            var speed = config.Bind("General", "Speed", 5, "How fast.");
+            profile.Index();
+            Keeper.Reconcile();
+
+            Assert.Equal(9, speed.Value);
+            Assert.Equal("5", Keeper.Find(PinFile.IdOf("a.cfg", "General", "Speed"))!.Profile);
+        }
+
+        [Fact]
+        public void ACfgFileThatCannotBeReadAtLaunchLeavesWhatWasKeptAsItWas()
+        {
+            using var profile = new TestProfile();
+            profile.WriteCfg("a.cfg", CfgWith("7"));
+            profile.WritePins("a.cfg\tGeneral\tSpeed\t9\t5");
+            var pins = File.ReadAllBytes(PinFile.FilePath);
+
+            using (TestProfile.Lock(profile.CfgPath("a.cfg")))
+                profile.Launch();
+
+            Assert.Equal(pins, File.ReadAllBytes(PinFile.FilePath));
+            Assert.Empty(Keeper.ProfileChanged());
+        }
+
+        [Fact]
+        public void AKeybindIsYoursToKeepWhileBindruneIsDisabledByItsModManager()
+        {
+            using var profile = new TestProfile();
+            var plugin = Path.Combine(profile.Root, "plugins", "isimp-Bindrune");
+            Directory.CreateDirectory(plugin);
+            File.WriteAllText(Path.Combine(plugin, "Bindrune.dll.old"), "disabled");
+            Assert.False(BindruneLink.InstalledOnDisk());
+
+            File.WriteAllText(Path.Combine(plugin, "Bindrune.dll"), "enabled");
+            Assert.True(BindruneLink.InstalledOnDisk());
+
+            // Deeper than a mod manager puts it still counts.
+            File.Delete(Path.Combine(plugin, "Bindrune.dll"));
+            var deep = Path.Combine(plugin, "lib", "net");
+            Directory.CreateDirectory(deep);
+            File.WriteAllText(Path.Combine(deep, "Bindrune.dll"), "enabled");
+            Assert.True(BindruneLink.InstalledOnDisk());
+        }
+
         [Fact]
         public void YourValueGoesBackAndWhatItReplacesIsTheProfiles()
         {

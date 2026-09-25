@@ -1,4 +1,5 @@
 using System.IO;
+using System.Text;
 
 namespace Keepsake
 {
@@ -8,22 +9,29 @@ namespace Keepsake
     /// = as its key and everything after it as its value. When a setting appears twice, the last
     /// one is the one BepInEx keeps, so it is the one found here too.
     ///
-    /// Only the one line of each setting is replaced. Comments, order and line endings stay as
-    /// they were.
+    /// Only the one line of each setting is replaced. Comments, order, line endings and a byte
+    /// order mark stay as they were.
     /// </summary>
     public sealed class CfgText
     {
         private readonly string[] _lines;
         private readonly string _newline;
+        private readonly bool _byteOrderMark;
         private bool _changed;
 
-        private CfgText(string text)
+        private CfgText(string text, bool byteOrderMark = false)
         {
             _newline = text.Contains("\r\n") ? "\r\n" : "\n";
             _lines = text.Replace("\r\n", "\n").Split('\n');
+            _byteOrderMark = byteOrderMark;
         }
 
-        public static CfgText Load(string path) => new CfgText(File.ReadAllText(path));
+        public static CfgText Load(string path)
+        {
+            var bytes = File.ReadAllBytes(path);
+            var bom = bytes.Length >= 3 && bytes[0] == 0xEF && bytes[1] == 0xBB && bytes[2] == 0xBF;
+            return new CfgText(new UTF8Encoding(false).GetString(bytes, bom ? 3 : 0, bytes.Length - (bom ? 3 : 0)), bom);
+        }
 
         /// <summary>A cfg file from text already in hand.</summary>
         public static CfgText Parse(string text) => new CfgText(text);
@@ -72,7 +80,7 @@ namespace Keepsake
         }
 
         /// <summary>Writes the file back, swapped in whole so a crash cannot leave half a file.</summary>
-        public void Save(string path) => PinFile.ReplaceText(path, Text);
+        public void Save(string path) => PinFile.ReplaceText(path, Text, _byteOrderMark);
 
         private int Find(string section, string key, out string value)
         {

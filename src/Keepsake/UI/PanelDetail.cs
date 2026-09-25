@@ -132,11 +132,7 @@ namespace Keepsake.UI
 
             Spacer(6f);
             var row = ButtonRow();
-            FixedButton("Release", row, 150f, 34f, () => Act(() =>
-            {
-                Keeper.Unpin(pin.Id);
-                return null;
-            }, Sfx.Released, () => $"{setting.Key} follows the profile again" + (pin.Profile != null ? $", at {KeyLabels.Shown(setting, pin.Profile)}." : ".")));
+            FixedButton("Release", row, 150f, 34f, () => Act(() => Keeper.Unpin(pin.Id), Sfx.Released, () => $"{setting.Key} follows the profile again" + (pin.Profile != null ? $", at {KeyLabels.Shown(setting, pin.Profile)}." : ".")));
 
             if (setting.Default != null && setting.Current != setting.Default)
                 FixedButton("Use default", row, 150f, 34f, () => Set(setting, setting.Default));
@@ -215,11 +211,7 @@ namespace Keepsake.UI
             Spacer(6f);
 
             var row = ButtonRow();
-            FixedButton("Release", row, 150f, 34f, () => Act(() =>
-            {
-                Keeper.Unpin(pin.Id);
-                return null;
-            }, Sfx.Released, () => $"{setting.Key} is no longer kept here."));
+            FixedButton("Release", row, 150f, 34f, () => Act(() => Keeper.Unpin(pin.Id), Sfx.Released, () => $"{setting.Key} is no longer kept here."));
         }
 
         /// <summary>
@@ -265,9 +257,9 @@ namespace Keepsake.UI
             var row = ButtonRow();
             FixedButton("Release", row, 150f, 34f, () => Act(() =>
             {
-                Keeper.Unpin(pin.Id);
-                _selectedId = null;
-                return null;
+                var problem = Keeper.Unpin(pin.Id);
+                if (problem == null) _selectedId = null;
+                return problem;
             }, Sfx.Released, () => $"{pin.Key} is no longer kept."));
         }
 

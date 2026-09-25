@@ -84,10 +84,18 @@ namespace Keepsake
         public static string Pin(Setting setting)
         {
             Sync();
+            if (Find(setting.Id) != null) return null;
+
             var problem = Add(setting);
-            if (problem == null) Save();
-            return problem;
+            if (problem != null) return problem;
+            if (Save()) return null;
+
+            Remove(setting.Id);
+            return CannotSave;
         }
+
+        /// <summary>Why an action changed nothing, when keepsake.pins could not be read or written.</summary>
+        public const string CannotSave = "keepsake.pins could not be read or saved, so nothing changed; see the log";
 
         /// <summary>
         /// Keeps every one of these settings at the value it has now, in one write. Those already
@@ -97,12 +105,22 @@ namespace Keepsake
         {
             Sync();
 
-            var kept = 0;
+            var added = new List<string>();
             foreach (var setting in settings)
-                if (Find(setting.Id) == null && Add(setting) == null) kept++;
+                if (Find(setting.Id) == null && Add(setting) == null) added.Add(setting.Id);
 
-            if (kept > 0) Save();
-            return kept;
+            if (added.Count == 0 || Save()) return added.Count;
+
+            foreach (var id in added) Remove(id);
+            return 0;
+        }
+
+        /// <summary>Takes a pin out of memory again, after its keeping could not be saved.</summary>
+        private static void Remove(string id)
+        {
+            if (!_byId.TryGetValue(id, out var pin)) return;
+            _pins.Remove(pin);
+            Index();
         }
 
         /// <summary>Whether Keep would take the setting: loaded, not kept, not Bindrune's, and storable.</summary>
@@ -159,9 +177,9 @@ namespace Keepsake
         /// Stops keeping the setting and puts the profile's value back, so it reads the way it
         /// will after the next sync anyway.
         /// </summary>
-        public static void Unpin(string id) => UnpinAll(new[] { id });
+        public static string Unpin(string id) => UnpinAll(new[] { id }) > 0 || Find(id) == null ? null : CannotSave;
 
-        /// <summary>Releases every one of these settings, in one write. Returns how many were kept.</summary>
+        /// <summary>Releases every one of these settings, in one write. Returns how many were kept, 0 when the release could not be saved.</summary>
         public static int UnpinAll(IEnumerable<string> ids)
         {
             Sync();
@@ -178,7 +196,12 @@ namespace Keepsake
             }
 
             if (released.Count == 0) return 0;
-            Save();
+            if (!Save())
+            {
+                _pins.AddRange(released);
+                Index();
+                return 0;
+            }
 
             var answered = false;
             foreach (var pin in released)
@@ -220,14 +243,27 @@ namespace Keepsake
                 return $"\"{text}\" is not a valid value for {setting.Key}";
             }
 
+            if (!PinFile.Storable(text)) return "this value has line breaks or tabs in it, which Keepsake cannot store";
+
+            // Your value is saved before the setting takes it, so a value that cannot be saved is
+            // not given to the mod either.
+            var before = pin.Value;
+            pin.Value = text;
+            if (!Save())
+            {
+                pin.Value = before;
+                return CannotSave;
+            }
+
             Write(setting, text);
 
             // The setting may have adjusted it, for example to fit its allowed range.
             var now = setting.Current ?? text;
-            if (!PinFile.Storable(now)) return "this value has line breaks or tabs in it, which Keepsake cannot store";
-
-            pin.Value = now;
-            Save();
+            if (now != text && PinFile.Storable(now))
+            {
+                pin.Value = now;
+                Save();
+            }
 
             // Choosing a value here is an answer to a profile change as much as Keep mine is.
             Answered(setting.Id);
@@ -572,16 +608,17 @@ namespace Keepsake
             }
         }
 
-        private static void Save()
+        /// <summary>Writes the pins in memory to keepsake.pins. Returns false when it could not, or must not because the file could not be read.</summary>
+        private static bool Save()
         {
             Index();
             if (_unreadable)
             {
                 Plugin.WarnOnce("Keepsake: keepsake.pins could not be read, so changes are not saved to it until it can.");
-                return;
+                return false;
             }
 
-            if (!PinFile.Write(_pins)) return;
+            if (!PinFile.Write(_pins)) return false;
             _stamp = PinFile.Stamp();
 
             // Every value in memory is in the file now, followed ones included.
@@ -589,6 +626,7 @@ namespace Keepsake
                 if (_byId.TryGetValue(id, out var pin))
                     Plugin.Log.LogInfo($"Keepsake: your value for {pin.File} [{pin.Section}] {pin.Key} is now {pin.Value}.");
             Pending.Clear();
+            return true;
         }
 
         /// <summary>Forgets everything, as at launch. For the tests, which run many launches in one process.</summary>

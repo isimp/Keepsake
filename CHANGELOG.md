@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.5.0
+
+What you kept now survives Update existing profile in Thunderstore Mod Manager and r2modman. For their profiles Keepsake offers to keep a spare copy next to the profiles folder, asking once before it writes anything there, and brings it back at the first launch after an update, saying so in the corner. The Spare copy button in the panel changes the answer.
+
+Nothing Keepsake replaces or releases is lost any more. The version it replaces is set aside first, and a kept file's detail lists its last five earlier versions to look at and put back. Keepsake's own lists are set aside at each launch too.
+
+A Keepsake file held open by another program is never written over, and keeping, releasing or setting a value says so when it cannot be saved instead of looking done. Writing a kept value keeps a cfg file's byte order mark, and a line in keepsake.pins pointing outside BepInEx/config is skipped.
+
 ## 0.4.2
 
 Kept files now hold through modpack installs and updates in any mod manager. Mod managers give the files they extract the time stored in the zip, which made a modpack's file look older than your own, so it was taken as yours; after a game Keepsake saw close, any change is now put back, whatever time the file carries.

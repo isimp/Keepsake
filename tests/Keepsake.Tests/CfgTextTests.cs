@@ -1,3 +1,6 @@
+using System.IO;
+using System.Linq;
+using System.Text;
 using Xunit;
 
 namespace Keepsake.Tests
@@ -27,6 +30,54 @@ namespace Keepsake.Tests
             "# Setting type: KeyboardShortcut\r\n" +
             "Shortcut = H + LeftAlt\r\n" +
             "Enabled = false\r\n";
+
+        [Fact]
+        public void AFileWithAByteOrderMarkKeepsItAndChangesOnlyTheLine()
+        {
+            var path = Path.Combine(Path.GetTempPath(), "keepsake-bom-" + System.Guid.NewGuid().ToString("N") + ".cfg");
+            try
+            {
+                var bom = new byte[] { 0xEF, 0xBB, 0xBF };
+                File.WriteAllBytes(path, bom.Concat(Encoding.UTF8.GetBytes(Cfg)).ToArray());
+
+                var cfg = CfgText.Load(path);
+                Assert.True(cfg.TryGet("General", "Enabled", out var value));
+                Assert.Equal("true", value);
+                cfg.Set("Keys", "Open", "K");
+                cfg.Save(path);
+
+                Assert.Equal(bom.Concat(Encoding.UTF8.GetBytes(Cfg.Replace("Open = H\r\n", "Open = K\r\n"))).ToArray(), File.ReadAllBytes(path));
+            }
+            finally
+            {
+                File.Delete(path);
+            }
+        }
+
+        [Fact]
+        public void AFileWithUnixLineEndingsKeepsThem()
+        {
+            var unix = Cfg.Replace("\r\n", "\n");
+            var cfg = CfgText.Parse(unix);
+            cfg.Set("Keys", "Open", "K");
+
+            Assert.Equal(unix.Replace("Open = H\n", "Open = K\n"), cfg.Text);
+        }
+
+        [Theory]
+        [InlineData("a=b")]
+        [InlineData("#FF0000")]
+        [InlineData("x # not a comment")]
+        [InlineData("[not a section]")]
+        [InlineData("")]
+        public void AValueReadsBackAsItWasSet(string value)
+        {
+            var cfg = CfgText.Parse(Cfg);
+            Assert.True(cfg.Set("Keys", "Open", value));
+
+            Assert.True(CfgText.Parse(cfg.Text).TryGet("Keys", "Open", out var read));
+            Assert.Equal(value, read);
+        }
 
         [Fact]
         public void SettingAValueChangesOnlyItsLine()

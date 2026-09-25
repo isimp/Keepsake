@@ -561,6 +561,111 @@ namespace Keepsake.Tests
         }
 
         [Fact]
+        public void AKeptFolderASyncTookAwayWholeComesBackWhole()
+        {
+            using var profile = new TestProfile();
+            Write(profile, Solo, "one");
+            Write(profile, Timers + "/deep/Other.Seasonality.bin", "two");
+            FileKeeper.Keep("Seasonality", isFolder: true);
+            Close(Earlier.AddHours(1));
+
+            Directory.Delete(profile.CfgPath("Seasonality"), true);
+
+            Assert.Equal(2, Launch(Earlier.AddDays(1), logEnd: Earlier.AddHours(1)).PutBack);
+            Assert.Equal("one", File.ReadAllText(profile.CfgPath(Solo)));
+            Assert.Equal("two", File.ReadAllText(profile.CfgPath(Timers + "/deep/Other.Seasonality.bin")));
+        }
+
+        [Fact]
+        public void AKeptFileWhoseCopyWasLostGetsANewOneAtTheNextClose()
+        {
+            using var profile = new TestProfile();
+            Write(profile, Solo, "one");
+            FileKeeper.Keep(Timers, isFolder: true);
+            File.Delete(KeptFiles.Copy(Solo));
+
+            Assert.Equal(0, Launch(Earlier.AddHours(1)).PutBack);
+            Assert.Equal("one", File.ReadAllText(profile.CfgPath(Solo)));
+
+            Close(Earlier.AddHours(2));
+            Assert.Equal("one", CopyOf(Solo));
+        }
+
+        [Fact]
+        public void AKeptFileAModHoldsOpenAtCloseDoesNotStopTheOthers()
+        {
+            using var profile = new TestProfile();
+            Write(profile, Solo, "one");
+            Write(profile, Timers + "/Other.Seasonality.bin", "two");
+            FileKeeper.Keep(Timers, isFolder: true);
+
+            var held = Write(profile, Solo, "one, played on", Earlier.AddMinutes(1));
+            Write(profile, Timers + "/Other.Seasonality.bin", "two, played on", Earlier.AddMinutes(1));
+            using (TestProfile.Lock(held))
+                Close(Earlier.AddMinutes(2));
+
+            Assert.Equal("one", CopyOf(Solo));
+            Assert.Equal("two, played on", CopyOf(Timers + "/Other.Seasonality.bin"));
+
+            // Once the mod lets go, the next close copies it.
+            Close(Earlier.AddMinutes(3));
+            Assert.Equal("one, played on", CopyOf(Solo));
+        }
+
+        [Fact]
+        public void AKeptFileHeldOpenAtLaunchIsLeftAndTheOthersArePutBack()
+        {
+            using var profile = new TestProfile();
+            Write(profile, Solo, "one");
+            Write(profile, Timers + "/Other.Seasonality.bin", "two");
+            FileKeeper.Keep(Timers, isFolder: true);
+            Close(Earlier.AddHours(1));
+
+            var held = Write(profile, Solo, "the owner's", Earlier.AddDays(1));
+            Write(profile, Timers + "/Other.Seasonality.bin", "the owner's", Earlier.AddDays(1));
+            using (TestProfile.Lock(held))
+                Assert.Equal(1, Launch(Earlier.AddDays(2), logEnd: Earlier.AddHours(1)).PutBack);
+
+            Assert.Equal("the owner's", File.ReadAllText(held));
+            Assert.Equal("two", File.ReadAllText(profile.CfgPath(Timers + "/Other.Seasonality.bin")));
+            Assert.Equal("one", CopyOf(Solo));
+        }
+
+        [Theory]
+        [InlineData("closed\tyesterday")]
+        [InlineData("closed")]
+        [InlineData("closed\t2026-13-45T99:99:99Z")]
+        public void ASessionFileWithADamagedCloseIsAGameKeepsakeDidNotSeeClose(string damaged)
+        {
+            using var profile = new TestProfile();
+            var file = Write(profile, Solo, "spring");
+            FileKeeper.Keep(Timers, isFolder: true);
+            Close(Earlier.AddHours(1));
+            File.WriteAllText(SessionFile.FilePath, SessionFile.Version + "\n" + damaged + "\n");
+
+            Write(profile, Solo, "the owner's", Earlier.AddDays(1));
+            var result = Launch(Earlier.AddDays(2), logEnd: Earlier.AddHours(1));
+
+            Assert.False(result.Clean);
+            Assert.Equal("the owner's", File.ReadAllText(file));
+        }
+
+        [Fact]
+        public void AFileWithSpacesAndLettersBeyondEnglishIsKeptLikeAnyOther()
+        {
+            using var profile = new TestProfile();
+            const string path = "Mod Folder/Welt Ödland ☀.dat";
+            var file = Write(profile, path, "mine");
+            Assert.Null(FileKeeper.Keep(path, isFolder: false));
+            Close(Earlier.AddHours(1));
+
+            File.Delete(file);
+            FileKeeper.Reset();
+            Assert.Equal(1, Launch(Earlier.AddDays(1), logEnd: Earlier.AddHours(1)).PutBack);
+            Assert.Equal("mine", File.ReadAllText(file));
+        }
+
+        [Fact]
         public void TheLeftoverCheckCoversKeptFilesAndTheirCopies()
         {
             using var profile = new TestProfile();

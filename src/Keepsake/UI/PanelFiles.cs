@@ -239,7 +239,56 @@ namespace Keepsake.UI
 
             // A waiting file shows both versions above, the file as it is among them.
             if (item != null && !isFolder && waiting == null) Preview(path);
+            if (!isFolder) EarlierVersions(path, name);
         }
+
+        /// <summary>Which earlier version is open in a viewer, by its file in the trash.</summary>
+        private static string _shownVersion;
+
+        /// <summary>
+        /// The versions of a file Keepsake set aside before replacing or removing them, newest
+        /// first, each with a look inside and a way back. See Trash.
+        /// </summary>
+        private static void EarlierVersions(string path, string name)
+        {
+            var versions = Trash.Of(path);
+            if (versions.Count == 0) return;
+
+            Spacer(14f);
+            Wrapped("Earlier versions", _detail, DetailInner, 17, Color.white, true);
+            Wrapped($"What Keepsake replaced or released, the last {Trash.Versions} kept in BepInEx/keepsake-trash. " +
+                    "Put back makes one your copy, which goes back in at the next launch, before any mod reads the file.",
+                _detail, DetailInner, 13, Dim);
+
+            foreach (var version in versions)
+            {
+                var info = new FileInfo(version.File);
+                var shown = string.Equals(_shownVersion, version.File, StringComparison.OrdinalIgnoreCase);
+
+                Spacer(8f);
+                Wrapped($"{TitleOf(version.Reason)}, set aside {version.At.ToLocalTime():yyyy-MM-dd HH:mm}",
+                    _detail, DetailInner, 15, version.Reason == TrashReason.Replaced ? GUIManager.Instance.ValheimOrange : Kept, true);
+                Wrapped($"Written {info.LastWriteTime:yyyy-MM-dd HH:mm:ss}, {SizeOf(info.Length)}", _detail, DetailInner, 12, Dim);
+
+                var row = ButtonRow();
+                FixedButton(shown ? "Hide" : "Show", row, 110f, 34f, () =>
+                {
+                    _shownVersion = shown ? null : version.File;
+                    ShowDetail();
+                });
+
+                var wasKept = FileKeeper.KeptBy(path) != null;
+                FixedButton("Put back", row, 130f, 34f, () => Act(() => FileKeeper.PutBackVersion(path, version), Sfx.ValueSet,
+                    () => (wasKept ? "" : $"{name} is kept again, and ") + $"this version of {name} goes back in at the next launch."));
+
+                if (shown) Look(path, version.File);
+            }
+        }
+
+        private static string TitleOf(TrashReason reason) =>
+            reason == TrashReason.Replaced ? "The file your copy replaced" :
+            reason == TrashReason.Released ? "Your copy when you released it" :
+            "An earlier copy of yours";
 
         /// <summary>
         /// A kept file the launch left as it is: it changed after a game Keepsake did not see close,
@@ -315,10 +364,31 @@ namespace Keepsake.UI
             Spacer(8f);
             var info = new FileInfo(full);
             Wrapped($"{title}, written {info.LastWriteTime:yyyy-MM-dd HH:mm:ss}", _detail, DetailInner, 15, color, true);
+            Look(path, full, head);
+        }
 
-            if (FileKeeper.IsImage(path)) ImagePreview(path, full, info.Length, CompareHeight);
-            else if (IsText(head)) TextViewer(head, info.Length, CompareHeight);
-            else Wrapped("A binary file of " + SizeOf(info.Length) + ", with nothing to show as text.", _detail, DetailInner, 13, Dim);
+        /// <summary>A version of a file in a viewer the height of the compared ones: the image, the text, or what it is.</summary>
+        /// <param name="path">The kept file's path, which names the file type.</param>
+        /// <param name="full">The version itself, whose own name may end in .kept.</param>
+        private static void Look(string path, string full, byte[] head = null)
+        {
+            try
+            {
+                var length = new FileInfo(full).Length;
+                if (FileKeeper.IsImage(path))
+                {
+                    ImagePreview(path, full, length, CompareHeight);
+                    return;
+                }
+
+                head = head ?? ReadHead(full, ViewerBytes);
+                if (IsText(head)) TextViewer(head, length, CompareHeight);
+                else Wrapped("A binary file of " + SizeOf(length) + ", with nothing to show as text.", _detail, DetailInner, 13, Dim);
+            }
+            catch (Exception ex)
+            {
+                Wrapped("Could not be read: " + ex.Message, _detail, DetailInner, 13, Dim);
+            }
         }
 
         /// <summary>Where the two versions first part, by line for text and by byte otherwise.</summary>
@@ -362,14 +432,11 @@ namespace Keepsake.UI
             var row = ButtonRow();
             if (keptItself)
             {
-                FixedButton("Release", row, 150f, 34f, () => Act(() =>
-                {
-                    FileKeeper.Release(path);
-                    return null;
-                }, Sfx.Released, () => $"{name} is no longer kept. It stays as it is until the next profile sync."));
+                FixedButton("Release", row, 150f, 34f, () => Act(() => FileKeeper.Release(path), Sfx.Released, () => $"{name} is no longer kept. It stays as it is until the next profile sync."));
 
                 Wrapped("Kept. Keepsake saves a copy of " + (isFolder ? "every file in it" : "it") + " as the game closes, and puts the " +
-                        "copy back at launch if a profile sync replaced or removed it. Release stops that and removes the copies.",
+                        "copy back at launch if a profile sync replaced or removed it. Release stops that and moves the copies to the trash, " +
+                        "where they stay as earlier versions.",
                     _detail, DetailInner, 13, Dim);
                 return;
             }

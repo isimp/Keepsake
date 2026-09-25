@@ -18,7 +18,7 @@ Changed this session lists what you just tried out in a config manager, and Keep
 
 When the profile changes a value you keep, Keepsake tells you once your character appears, and you choose whether to take the new value. A setting the profile changes all the time, such as a volume, can be made quiet.
 
-Files a mod keeps its state in, such as Seasonality's timer for each world, can be kept whole from the Files place, so your own worlds carry on where you left them.
+Files a mod keeps its state in, such as Seasonality's timer for each world, can be kept whole from the Files place, so your own worlds carry on where you left them. Whatever Keepsake replaces or releases is set aside first, and a file's last five earlier versions can be looked at and put back from its detail.
 
 ## Good to know
 
@@ -34,14 +34,14 @@ Keybinds are left to Bindrune when it is installed, which keeps them the same wa
 |---|---|---|
 | Gale profile sync, or a Gale import into the same profile | Yes | Yes |
 | Installing or updating a modpack, in any mod manager | Yes | Yes, when the game last closed normally |
-| Thunderstore Mod Manager or r2modman, Update existing profile | No | No |
+| Thunderstore Mod Manager or r2modman, Update existing profile | Yes, with a spare copy | Yes, with a spare copy |
 | Importing as a new profile, in any mod manager | Carried over by hand | Carried over by hand |
 
-Update existing profile in Thunderstore Mod Manager and r2modman replaces the whole profile folder, so what you kept is gone with it. A profile imported as new starts with nothing kept; to bring it along, copy keepsake.pins, keepsake.files, keepsake.changes and the keepsake-files folder from the old profile's BepInEx folder into the new one's.
+Update existing profile in Thunderstore Mod Manager and r2modman replaces the whole profile folder. For their profiles Keepsake offers to keep a spare copy of what you kept next to the profiles folder, in Keepsake and the profile's name, and brings it back at the next launch. It asks before writing anything there, and the Spare copy button in the panel changes the answer. A profile imported as new starts with nothing kept; to bring it along, copy keepsake.pins, keepsake.files, keepsake.changes and the keepsake-files folder from the old profile's BepInEx folder into the new one's.
 
 ## Settings
 
-All settings are in BepInEx/config/isimp.Keepsake.cfg, each with a description. They include the key that opens the panel, the panel's size, its sounds and the notice about profile changes.
+All settings are in BepInEx/config/isimp.Keepsake.cfg, each with a description. They include the key that opens the panel, the panel's size, its sounds and the notice about profile changes. Whether to keep a spare copy is asked in the panel instead and kept with Keepsake's own files, so a shared profile never answers it for you.
 
 ## More
 

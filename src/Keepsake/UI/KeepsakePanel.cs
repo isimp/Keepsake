@@ -192,6 +192,9 @@ namespace Keepsake.UI
             _detail = null;
             _search = null;
             _bindruneButton = null;
+            _spareButton = null;
+            _closeButton = null;
+            _modal = null;
             _repopulateAt = 0f;
 
             // The first time in a session at Info, where a default log file records it; after that
@@ -301,12 +304,34 @@ namespace Keepsake.UI
             _bindruneButton.SetActive(count > 0);
             var label = _bindruneButton.GetComponentInChildren<Text>();
             if (label != null) label.text = $"From Bindrune ({count})";
+            PlaceTopButtons();
+        }
+
+        private const float CloseButtonWidth = 110f;
+        private const float BindruneButtonWidth = 200f;
+        private static GameObject _closeButton;
+
+        /// <summary>
+        /// The buttons at the top right, packed from the right edge in a row: Close, From Bindrune
+        /// while it has keys to offer, and Spare copy for a profile that can have one, so a hidden
+        /// one leaves no gap.
+        /// </summary>
+        private static void PlaceTopButtons()
+        {
+            var right = -Margin;
+            foreach (var (button, width) in new[] { (_closeButton, CloseButtonWidth), (_bindruneButton, BindruneButtonWidth), (_spareButton, SpareButtonWidth) })
+            {
+                if (button == null || !button.activeSelf) continue;
+                AnchorRight(button, right, -36f);
+                right -= width + 10f;
+            }
         }
 
         // ---------- construction ----------
 
         private static void Build()
         {
+            _modal = null;
             _root = GUIManager.Instance.CreateWoodpanel(
                 GUIManager.CustomGUIFront.transform,
                 new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), Vector2.zero,
@@ -316,8 +341,7 @@ namespace Keepsake.UI
             var title = Label("Keepsake", _root.transform, 200f, 32f, 26, GUIManager.Instance.ValheimOrange, true);
             AnchorLeft(title, Margin, -36f);
 
-            var close = Button("Close", _root.transform, 110f, 32f, () => Close());
-            AnchorRight(close, -Margin, -36f);
+            _closeButton = Button("Close", _root.transform, CloseButtonWidth, 32f, () => Close());
 
             _bindruneButton = Button("From Bindrune", _root.transform, 200f, 32f, () =>
             {
@@ -329,7 +353,8 @@ namespace Keepsake.UI
                 ShowDetail();
                 ShowNote();
             });
-            AnchorRight(_bindruneButton, -Margin - 120f, -36f);
+            BuildSpareButton();
+            PlaceTopButtons();
 
             var searchObject = GUIManager.Instance.CreateInputField(_root.transform,
                 new Vector2(0f, 1f), new Vector2(0f, 1f), Vector2.zero,
@@ -377,6 +402,7 @@ namespace Keepsake.UI
             _settingList.ScrollOffset = _settingScroll;
             Populate(keepScroll: true);
             _rebindNextFrame = true;
+            AskAboutSpareCopyIfDue();
         }
 
         // How far both lists were scrolled when their window went away.

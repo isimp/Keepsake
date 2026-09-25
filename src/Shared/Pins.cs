@@ -114,9 +114,18 @@ namespace Keepsake
                     continue;
                 }
 
+                // A hand edit could point a line anywhere on the disk, and the preloader writes
+                // into the file it names.
+                var file = KeptFiles.Normalise(parts[0]);
+                if (file == null)
+                {
+                    Log?.LogWarning($"Keepsake: skipped a line in keepsake.pins whose file is not inside BepInEx/config: {raw}");
+                    continue;
+                }
+
                 var pin = new Pin
                 {
-                    File = NormaliseFile(parts[0]),
+                    File = file,
                     Section = parts[1].Trim(),
                     Key = parts[2].Trim(),
                     Value = parts[3].Trim(),
@@ -170,10 +179,11 @@ namespace Keepsake
         /// Writes a text file aside and swaps it in, so a crash mid-write leaves the old file
         /// rather than half of the new one. UTF-8 without a byte order mark, as BepInEx writes.
         /// </summary>
-        public static void ReplaceText(string path, string text)
+        /// <param name="byteOrderMark">Whether the file starts with a UTF-8 byte order mark, as one that had it keeps it.</param>
+        public static void ReplaceText(string path, string text, bool byteOrderMark = false)
         {
             var temp = path + TempSuffix;
-            System.IO.File.WriteAllText(temp, text, new UTF8Encoding(false));
+            System.IO.File.WriteAllText(temp, text, new UTF8Encoding(byteOrderMark));
 
             if (System.IO.File.Exists(path)) System.IO.File.Replace(temp, path, null);
             else System.IO.File.Move(temp, path);

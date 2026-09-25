@@ -28,14 +28,21 @@ namespace Keepsake.Tests
 
         private readonly List<ConfigFile> _configs = new List<ConfigFile>();
 
-        public TestProfile()
+        /// <param name="root">The BepInEx folder, for a profile laid out like a mod manager's; a new temporary folder otherwise.</param>
+        public TestProfile(string root = null)
         {
-            Root = Path.Combine(Path.GetTempPath(), "keepsake-tests-" + Guid.NewGuid().ToString("N"));
+            Root = root ?? Path.Combine(Path.GetTempPath(), "keepsake-tests-" + Guid.NewGuid().ToString("N"));
             Directory.CreateDirectory(ConfigDir);
 
             SetPath(nameof(Paths.BepInExRootPath), Root);
             SetPath(nameof(Paths.ConfigPath), ConfigDir);
+            SetPath(nameof(Paths.PluginPath), Path.Combine(Root, "plugins"));
+            StartPlugin();
+        }
 
+        /// <summary>The plugin as a new game starts it, knowing nothing yet.</summary>
+        private void StartPlugin()
+        {
             Keeper.Reset();
             FileKeeper.Reset();
             Session.Reset();
@@ -46,6 +53,20 @@ namespace Keepsake.Tests
             SettingIndex.SettingFound = Session.Note;
             Plugin.Warnings.Clear();
         }
+
+        /// <summary>A new game: the preloader's launch, given when the last game's log ended, then the plugin starting afresh.</summary>
+        public LaunchResult Launch(DateTime? now = null, DateTime? logEnd = null)
+        {
+            var result = Launcher.Run(now ?? DateTime.UtcNow, logEnd, () => false);
+            StartPlugin();
+            return result;
+        }
+
+        /// <summary>The game closing, as the plugin sees it.</summary>
+        public void Close(DateTime? at = null) => GameClose.Run("test", at);
+
+        /// <summary>Holds a file open so nothing else can read or write it, as a scanner or an editor may, until disposed.</summary>
+        public static IDisposable Lock(string path) => new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.None);
 
         /// <summary>BepInEx sets its paths once as it starts, with no public way in.</summary>
         private static void SetPath(string name, string value) =>

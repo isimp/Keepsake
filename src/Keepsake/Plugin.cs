@@ -120,7 +120,9 @@ namespace Keepsake
         {
             try
             {
+                // Only the files: what the rest writes may be gone from the game by now.
                 FileKeeper.Close("exit");
+                SpareCopy.Update();
             }
             catch (Exception)
             {
@@ -129,13 +131,12 @@ namespace Keepsake
             }
         }
 
-        /// <summary>Writes the values followed from a config manager that are still waiting, and copies of kept files, as the game closes.</summary>
+        /// <summary>Writes the values followed from a config manager that are still waiting, copies of kept files, and the spare copy, as the game closes.</summary>
         private static void FlushQuietly(string by)
         {
             try
             {
-                Keeper.Flush();
-                FileKeeper.Close(by);
+                GameClose.Run(by);
             }
             catch (Exception ex)
             {
@@ -196,6 +197,11 @@ namespace Keepsake
             if (_noticeAt == 0f) _noticeAt = Time.realtimeSinceStartup + 5f;
             if (Time.realtimeSinceStartup < _noticeAt) return;
             _noticeShown = true;
+
+            // Said whatever the setting, since it happens only when a mod manager replaced the profile.
+            if (SpareCopy.RestoredThisLaunch)
+                MessageHud.instance.ShowMessage(MessageHud.MessageType.TopLeft,
+                    "Keepsake: the profile was replaced by an update, so what you kept came back from its spare copy.");
 
             if (!_profileChangeNotice.Value) return;
 

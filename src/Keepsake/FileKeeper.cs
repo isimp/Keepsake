@@ -87,20 +87,27 @@ namespace Keepsake
             return null;
         }
 
-        /// <summary>Stops keeping a file or folder and removes its copies. The file itself stays as it is.</summary>
-        public static void Release(string path)
+        /// <summary>Stops keeping a file or folder and moves its copies to the trash. The file itself stays as it is. Returns why not, or null.</summary>
+        public static string Release(string path)
         {
             Load();
-            if (_unreadable) return;
+            if (_unreadable) return "keepsake.files could not be read, so nothing is taken out of it until it can";
             var entry = Kept.FirstOrDefault(k => string.Equals(k.Path, path, StringComparison.OrdinalIgnoreCase));
-            if (entry == null) return;
+            if (entry == null) return null;
+
+            if (!KeptFiles.SetAside(entry)) return "the copies could not be set aside in the trash, so it stays kept; see the log";
 
             _kept.Remove(entry);
-            if (!KeptFiles.Write(_kept)) return;
+            if (!KeptFiles.Write(_kept))
+            {
+                _kept.Add(entry);
+                return "keepsake.files could not be saved, see the log";
+            }
             KeptFiles.Forget(entry);
 
             var session = Session;
             if (session != null && session.Waiting.RemoveAll(w => entry.Covers(w.Path)) > 0) SessionFile.Write(session);
+            return null;
         }
 
         /// <summary>keepsake.session as the preloader left it this launch, or null when it cannot be read, and is then never written over.</summary>
@@ -137,9 +144,49 @@ namespace Keepsake
             var waiting = WaitingFor(path);
             if (waiting == null) return "that file is not waiting for an answer";
             if (!File.Exists(KeptFiles.Live(path))) return "the file is not there to keep";
+            if (!Trash.Put(path, KeptFiles.Copy(path), TrashReason.Copy)) return "your copy could not be set aside, see the log";
 
             KeptFiles.CopyOver(KeptFiles.Live(path), KeptFiles.Copy(path));
             Session.Waiting.Remove(waiting);
+            return SessionFile.Write(Session) ? null : "keepsake.session could not be saved, see the log";
+        }
+
+        /// <summary>
+        /// An earlier version of a file goes back in at the next launch, before any mod reads the
+        /// file: it becomes the copy, and the file waits with your copy chosen. A file no longer
+        /// kept is kept again for it. The copy it replaces is set aside first.
+        /// </summary>
+        public static string PutBackVersion(string path, TrashEntry version)
+        {
+            if (!File.Exists(version.File)) return "that version is no longer in the trash";
+            Load();
+            if (_unreadable) return "keepsake.files could not be read, so nothing is added to it until it can";
+            if (Session == null) return "keepsake.session could not be read, see the log";
+
+            if (KeptBy(path) == null)
+            {
+                _kept.Add(new KeptPath { Path = path });
+                if (!KeptFiles.Write(_kept)) return "keepsake.files could not be saved, see the log";
+            }
+
+            // Read first: setting the copy aside may take the oldest version out of the trash, and
+            // that may be this one.
+            var bytes = File.ReadAllBytes(version.File);
+            var written = File.GetLastWriteTimeUtc(version.File);
+
+            var copy = KeptFiles.Copy(path);
+            if (!Trash.Put(path, copy, TrashReason.Copy)) return "your copy could not be set aside, see the log";
+
+            Directory.CreateDirectory(Path.GetDirectoryName(copy));
+            var temp = copy + PinFile.TempSuffix;
+            File.WriteAllBytes(temp, bytes);
+            if (File.Exists(copy)) File.Replace(temp, copy, null);
+            else File.Move(temp, copy);
+            File.SetLastWriteTimeUtc(copy, written);
+
+            var waiting = WaitingFor(path);
+            if (waiting == null) Session.Waiting.Add(waiting = new WaitingFile { Path = path });
+            waiting.PutBack = true;
             return SessionFile.Write(Session) ? null : "keepsake.session could not be saved, see the log";
         }
 
@@ -162,11 +209,18 @@ namespace Keepsake
                 return;
             }
 
-            var saved = KeptFiles.Save(Kept, p => session?.WaitingFor(p) != null);
-            if (saved > 0) Plugin.Log?.LogDebug($"Keepsake: saved a copy of {saved} kept file(s).");
+            // Without the session file there is no telling which files wait for an answer, and a
+            // copy made from one of those would lose the version you have not chosen against. The
+            // next launch takes this game as one it did not see close, and judges each file by
+            // when it was written instead.
+            if (session == null)
+            {
+                Plugin.Log?.LogWarning("Keepsake: keepsake.session could not be read, so no copies of kept files were saved this time.");
+                return;
+            }
 
-            // Without the file, the next launch takes this game as one it did not see close.
-            if (session == null) return;
+            var saved = KeptFiles.Save(Kept, p => session.WaitingFor(p) != null);
+            if (saved > 0) Plugin.Log?.LogDebug($"Keepsake: saved a copy of {saved} kept file(s).");
             session.Closed = at ?? DateTime.UtcNow;
             session.ClosedBy = by;
             SessionFile.Write(session);
