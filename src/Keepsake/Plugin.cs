@@ -20,7 +20,7 @@ namespace Keepsake
     public class Plugin : BaseUnityPlugin
     {
         public const string Guid = "isimp.Keepsake";
-        public const string Version = "0.4.2";
+        public const string Version = "0.5.0";
 
         public static ManualLogSource Log;
 
