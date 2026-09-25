@@ -118,7 +118,7 @@ Release not loaded, over the kept settings once a world is up, releases every ke
 
 `BepInEx/keepsake-trash` holds earlier versions of kept files and of Keepsake's lists. See Earlier versions and the trash.
 
-A file of Keepsake's that cannot be read, such as one held open by another program, is never written over. While `keepsake.pins` cannot be read or written, keeping, releasing and setting values say they could not and change nothing, not even the setting in the game; a value followed from a config manager meanwhile is written once the file can be. While `keepsake.session` cannot be read, no copies of kept files are made at close, and the next launch judges the files as after a game it did not see close.
+A file of Keepsake's that cannot be read, such as one held open by another program, is never written over. While `keepsake.pins` cannot be read or written, keeping, releasing and setting values say they could not and change nothing, not even the setting in the game; a value followed from a config manager meanwhile is written once the file can be, and kept values the launch could not place for it are put in when a world loads or the panel opens. While `keepsake.session` cannot be read, no copies of kept files are made at close, and the next launch judges the files as after a game it did not see close.
 
 Keepsake's own settings are in `BepInEx/config/isimp.Keepsake.cfg`.
 

@@ -8,7 +8,8 @@ namespace Keepsake.Tests
     /// <summary>
     /// A file of Keepsake's that cannot be read, held open by a scanner or an editor, is never
     /// written over: nothing it holds is lost, actions that need it say they failed, and once it
-    /// can be read again Keepsake carries on from what it holds.
+    /// can be read again Keepsake carries on from what it holds. The same goes for a value that
+    /// cannot be saved to keepsake.pins.
     /// </summary>
     [Collection(ProfileCollection.Name)]
     public class UnreadableFilesTests
@@ -66,6 +67,28 @@ namespace Keepsake.Tests
 
             Assert.Equal(pins, File.ReadAllBytes(PinFile.FilePath));
             Assert.Equal(cfg, File.ReadAllText(profile.CfgPath("a.cfg")));
+        }
+
+        [Fact]
+        public void KeptValuesThatCouldNotBeReadAtTheStartAreAskedForAgainAndPutInOnceTheyCanBe()
+        {
+            using var profile = WithAKeptVolume();
+            var config = profile.Mod("a.cfg");
+            var volume = config.Bind("General", "Volume", 0.8f, "How loud.");
+            profile.Index();
+
+            // Held open through the preloader and the plugin's first look at the start menu.
+            using (TestProfile.Lock(PinFile.FilePath))
+            {
+                profile.Launch();
+                profile.Index();
+                Assert.True(Keeper.Reconcile() > 0);
+            }
+
+            Assert.Equal(0.8f, volume.Value);
+
+            Keeper.Reconcile();
+            Assert.Equal(0.2f, volume.Value);
         }
 
         [Fact]

@@ -370,12 +370,17 @@ namespace Keepsake
         /// <summary>
         /// Puts every pin back into the settings that are loaded, for pins the preloader could not
         /// place because the cfg file or its line did not exist yet. Also starts following every
-        /// cfg file seen so far. Returns how many pins have no loaded setting.
+        /// cfg file seen so far. Returns how many pins have no loaded setting, or 1 while keepsake.pins
+        /// cannot be read.
         /// </summary>
         public static int Reconcile()
         {
             Sync();
             SettingIndex.Refresh();
+
+            // Unread, none of your values is known: counted as one not placed yet, so the plugin
+            // looks again once a world loads, and the panel does when it opens.
+            if (_unreadable) return 1;
 
             int missing = 0;
             var dirty = false;

@@ -139,8 +139,8 @@ namespace Keepsake
             {
                 if (keep)
                 {
-                    Update();
-                    return null;
+                    Update(out var failed);
+                    return failed == 0 ? null : "the spare copy could not be made whole yet, see the log; the next save tries again";
                 }
 
                 if (Directory.Exists(spare)) Directory.Delete(spare, true);
@@ -217,14 +217,18 @@ namespace Keepsake
         /// for a profile with none of Keepsake's lists, so one that lost them never writes over the
         /// copy, nor while a restore is unfinished. Returns how many files were written or removed.
         /// </summary>
-        public static int Update()
+        public static int Update() => Update(out _);
+
+        /// <param name="failed">How many files could not be copied or removed.</param>
+        private static int Update(out int failed)
         {
+            failed = 0;
             var spare = Folder;
             if (spare == null || Wanted != true) return 0;
 
             var profile = Paths.BepInExRootPath;
             if (!HasLists(profile) || File.Exists(Marker)) return 0;
-            return Mirror(profile, spare, "saving", out _);
+            return Mirror(profile, spare, "saving", out failed);
         }
 
         /// <summary>

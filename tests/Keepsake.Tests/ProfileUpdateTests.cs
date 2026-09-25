@@ -399,6 +399,19 @@ namespace Keepsake.Tests
         }
 
         [Fact]
+        public void SayingYesWhenTheSpareCopyCannotBeMadeSaysSo()
+        {
+            using var profile = Played(spare: null);
+
+            using (TestProfile.Lock(PinFile.FilePath))
+                Assert.NotNull(SpareCopy.Answer(true));
+
+            // Once it can be, the next save makes it whole.
+            profile.Close();
+            Assert.Equal(File.ReadAllText(PinFile.FilePath), File.ReadAllText(Path.Combine(_game, "Keepsake", "Pack", "keepsake.pins")));
+        }
+
+        [Fact]
         public void SayingNoWritesNothingOutsideAndIsNotAskedAgain()
         {
             using var profile = Played(spare: false);
