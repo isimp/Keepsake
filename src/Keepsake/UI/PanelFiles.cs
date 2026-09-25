@@ -436,7 +436,7 @@ namespace Keepsake.UI
 
                 Wrapped("Kept. Keepsake saves a copy of " + (isFolder ? "every file in it" : "it") + " as the game closes, and puts the " +
                         "copy back at launch if a profile sync replaced or removed it. Release stops that and moves the copies to the trash, " +
-                        "where they stay as earlier versions.",
+                        "where they stay as earlier versions, apart from any larger than 8 MB.",
                     _detail, DetailInner, 13, Dim);
                 return;
             }

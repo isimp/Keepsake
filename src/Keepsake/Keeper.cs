@@ -353,7 +353,7 @@ namespace Keepsake
             if (_changesUnreadable || _unreadable) return;
             ProfileChanges.KeepOnly(Changes, _byId.Keys);
             ProfileChanges.Write(Changes);
-            SpareCopy.Follow();
+            SpareCopy.Follow(listsOnly: true);
         }
 
         /// <summary>Takes the profile's new value as yours, and the setting stays kept.</summary>
@@ -635,7 +635,10 @@ namespace Keepsake
 
             if (!PinFile.Write(_pins)) return false;
             _stamp = PinFile.Stamp();
-            SpareCopy.Follow();
+
+            // A slider in a config manager saves a second after it stops, so only the lists are
+            // looked at, never the copies of kept files and the trash, which a value leaves alone.
+            SpareCopy.Follow(listsOnly: true);
 
             // Every value in memory is in the file now, followed ones included.
             foreach (var id in Pending.Keys)

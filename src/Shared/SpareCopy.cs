@@ -220,7 +220,8 @@ namespace Keepsake
         public static int Update() => Update(out _);
 
         /// <param name="failed">How many files could not be copied or removed.</param>
-        private static int Update(out int failed)
+        /// <param name="listsOnly">Only Keepsake's own files at the top, not the kept files' copies and the trash below.</param>
+        private static int Update(out int failed, bool listsOnly = false)
         {
             failed = 0;
             var spare = Folder;
@@ -228,7 +229,7 @@ namespace Keepsake
 
             var profile = Paths.BepInExRootPath;
             if (!HasLists(profile) || File.Exists(Marker)) return 0;
-            return Mirror(profile, spare, "saving", out failed);
+            return Mirror(profile, spare, "saving", out failed, listsOnly);
         }
 
         /// <summary>
@@ -236,11 +237,15 @@ namespace Keepsake
         /// a session kept, released or changed is in it even if the game then crashes. Never
         /// throws: the spare copy is caught up at the next launch or close either way.
         /// </summary>
-        public static void Follow()
+        /// <param name="listsOnly">
+        /// For a save that touched only Keepsake's own files at the top, such as a value kept or
+        /// changed, which then leaves the copies and the trash below unlooked at.
+        /// </param>
+        public static void Follow(bool listsOnly = false)
         {
             try
             {
-                Update();
+                Update(out _, listsOnly);
             }
             catch (Exception ex)
             {
@@ -255,13 +260,15 @@ namespace Keepsake
         /// </summary>
         /// <param name="doing">What the log calls it when a file fails.</param>
         /// <param name="failed">How many files could not be copied or removed.</param>
-        private static int Mirror(string from, string to, string doing, out int failed)
+        /// <param name="listsOnly">Only the files at the top, leaving the folders alone.</param>
+        private static int Mirror(string from, string to, string doing, out int failed, bool listsOnly = false)
         {
             var changed = 0;
             failed = 0;
             var paths = new List<string>();
+            var folders = listsOnly ? new string[0] : Folders;
 
-            foreach (var folder in Folders)
+            foreach (var folder in folders)
             {
                 paths.AddRange(FilesIn(from, folder));
                 paths.AddRange(FilesIn(to, folder));
@@ -293,7 +300,7 @@ namespace Keepsake
                 }
             }
 
-            foreach (var folder in Folders) RemoveEmptyFolders(Path.Combine(to, folder));
+            foreach (var folder in folders) RemoveEmptyFolders(Path.Combine(to, folder));
             return changed;
         }
 
